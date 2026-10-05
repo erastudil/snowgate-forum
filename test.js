@@ -26,7 +26,10 @@ server.listen(0, '127.0.0.1', () => {
     resGate.on('end', () => {
       assert.ok(gateData.includes('say the password'), 'Must render challenge prompt: say the password');
       assert.ok(gateData.includes('SNOWGATE GATEWAY'), 'Must show gateway header');
-      console.log('✓ Test 1: Unauthenticated request received 401 gate challenge ("say the password")');
+      assert.ok(gateData.includes('gate-password-input'), 'Must contain password input id');
+      assert.ok(gateData.includes('unmask-toggle-btn'), 'Must contain unmask toggle button');
+      assert.ok(gateData.includes('eye-icon'), 'Must contain eye icon for unmasking');
+      console.log('✓ Test 1: Unauthenticated request received 401 gate challenge with unmask toggle');
 
       // Test 2: POST /gate with wrong password -> 401
       const reqBadPass = http.request(
@@ -36,7 +39,7 @@ server.listen(0, '127.0.0.1', () => {
           assert.strictEqual(resBadPass.statusCode, 401);
           console.log('✓ Test 2: Incorrect password rejected with 401');
 
-          // Test 3: POST /gate with correct password -> 303 + Set-Cookie
+          // Test 3: POST /gate with exact canonical password (with quotes and period) -> 303 + Set-Cookie
           const reqGoodPass = http.request(
             baseUrl + '/gate',
             { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' } },
@@ -44,7 +47,7 @@ server.listen(0, '127.0.0.1', () => {
               assert.strictEqual(resGoodPass.statusCode, 303);
               const cookie = resGoodPass.headers['set-cookie'];
               assert.ok(cookie && cookie[0].includes('snowgate_gate'), 'Must issue snowgate_gate cookie');
-              console.log('✓ Test 3: Correct password "two rivers crossing." unlocked gate with 303 and Set-Cookie');
+              console.log('✓ Test 3: Canonical password with quotes unlocked gate with 303 and Set-Cookie');
 
               // Test 4: Authenticated GET / (HTML Board Index)
               http.get(baseUrl + '/', { headers: authHeaders }, res => {
@@ -91,7 +94,15 @@ server.listen(0, '127.0.0.1', () => {
                               assert.strictEqual(resBad.statusCode, 403);
                               console.log('✓ Test 7: Security rejection of keys passed (403)');
 
-                              console.log('\n[PASS] All 7 Snowgate Forum & Captcha Gate tests passed with exit code 0!');
+                              // Test 8: Source code secrecy - plain text password must NOT be in api/index.js
+                              const fs = require('fs');
+                              const path = require('path');
+                              const srcCode = fs.readFileSync(path.join(__dirname, 'api', 'index.js'), 'utf-8');
+                              const forbiddenFragment = ['two', 'rivers', 'crossing'].join(' ');
+                              assert.ok(!srcCode.toLowerCase().includes(forbiddenFragment), 'Plaintext password must NOT appear in api/index.js');
+                              console.log('✓ Test 8: Source code secrecy verified (zero plaintext password in api/index.js)');
+
+                              console.log('\n[PASS] All 8 Snowgate Forum & Captcha Gate tests passed with exit code 0!');
                               server.close();
                               process.exit(0);
                             }
@@ -106,7 +117,7 @@ server.listen(0, '127.0.0.1', () => {
               });
             }
           );
-          reqGoodPass.write(querystring.stringify({ password: 'two rivers crossing.' }));
+          reqGoodPass.write(querystring.stringify({ password: '"two rivers crossing."' }));
           reqGoodPass.end();
         }
       );

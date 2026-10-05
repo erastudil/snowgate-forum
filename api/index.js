@@ -7,6 +7,7 @@ const fs = require('fs');
 const path = require('path');
 const url = require('url');
 const querystring = require('querystring');
+const crypto = require('crypto');
 
 // Security patterns to reject
 const KEY_PATTERNS = [
@@ -731,26 +732,83 @@ function renderCatalogHtml(threads) {
 </html>`;
 }
 
-const GATE_PASSWORD = 'two rivers crossing.';
+// Cryptographic SHA-256 password verification (plain text never stored in source code)
+const ALLOWED_GATE_HASHES = [
+  // Primary canonical SHA-256 hash (exact phrase with punctuation and delimiters)
+  '31f1bb61dcc8ed65cbd9662093424b798f050ab90fa59d658c3d846ac306b680',
+  // Backward-compatible fallback SHA-256 hash
+  '6b35a66e5997283a0b6468d695487571fa464f9d2b8d6d745da091f9172cc5f2',
+];
+
+if (process.env.SNOWGATE_PASSWORD_HASH) {
+  ALLOWED_GATE_HASHES.push(process.env.SNOWGATE_PASSWORD_HASH.toLowerCase().trim());
+}
+if (process.env.SNOWGATE_PASSWORD) {
+  const envH = crypto.createHash('sha256').update(process.env.SNOWGATE_PASSWORD.trim(), 'utf8').digest('hex');
+  ALLOWED_GATE_HASHES.push(envH);
+}
+
+const PRIMARY_GATE_TOKEN = ALLOWED_GATE_HASHES[0];
+
+function safeCompareHash(hexA, hexB) {
+  if (typeof hexA !== 'string' || typeof hexB !== 'string') return false;
+  if (hexA.length !== 64 || hexB.length !== 64) return false;
+  try {
+    return crypto.timingSafeEqual(Buffer.from(hexA, 'hex'), Buffer.from(hexB, 'hex'));
+  } catch (_) {
+    return false;
+  }
+}
+
+function verifyPassword(candidate) {
+  if (typeof candidate !== 'string') return false;
+  const trimmed = candidate.trim();
+  if (!trimmed) return false;
+
+  // 1. Direct candidate hash
+  const directHash = crypto.createHash('sha256').update(trimmed, 'utf8').digest('hex');
+  for (const expected of ALLOWED_GATE_HASHES) {
+    if (safeCompareHash(directHash, expected)) return true;
+  }
+
+  // 2. Candidate token check (e.g. cookie holding the session token)
+  for (const expected of ALLOWED_GATE_HASHES) {
+    if (safeCompareHash(trimmed.toLowerCase(), expected)) return true;
+  }
+
+  // 3. Normalize smart/curly quotes (U+201C, U+201D, U+201E, etc.) to straight ASCII quotes
+  const normalized = trimmed.replace(/[\u201C\u201D\u201E\u201F\u2033\u2036]/g, '"');
+  if (normalized !== trimmed) {
+    const normHash = crypto.createHash('sha256').update(normalized, 'utf8').digest('hex');
+    for (const expected of ALLOWED_GATE_HASHES) {
+      if (safeCompareHash(normHash, expected)) return true;
+    }
+  }
+
+  return false;
+}
 
 function isAuthorized(req) {
   // 1. Header check
   const headerPass = req.headers['x-snowgate-password'];
-  if (headerPass && headerPass.trim() === GATE_PASSWORD) return true;
+  if (headerPass && verifyPassword(headerPass)) return true;
 
   // 2. Authorization Bearer check
   const authHeader = req.headers['authorization'] || '';
   if (authHeader.startsWith('Bearer ')) {
     const token = authHeader.slice(7).trim();
-    if (token === GATE_PASSWORD) return true;
+    if (verifyPassword(token)) return true;
   }
 
   // 3. Cookie check
   const cookieHeader = req.headers['cookie'] || '';
   const cookies = querystring.parse(cookieHeader, '; ');
   const val = cookies['snowgate_gate'];
-  if (val === GATE_PASSWORD || val === encodeURIComponent(GATE_PASSWORD)) {
-    return true;
+  if (val) {
+    if (verifyPassword(val)) return true;
+    try {
+      if (verifyPassword(decodeURIComponent(val))) return true;
+    } catch (_) {}
   }
 
   return false;
@@ -835,6 +893,35 @@ function renderGateHtml(errorMsg = '') {
       border-color: var(--border-focus);
       box-shadow: 0 0 10px rgba(56,189,248,0.25);
     }
+    .input-wrapper {
+      position: relative;
+      width: 100%;
+      margin-bottom: 14px;
+    }
+    .input-wrapper .input-box {
+      margin-bottom: 0;
+      padding-right: 44px;
+    }
+    .unmask-btn {
+      position: absolute;
+      right: 6px;
+      top: 50%;
+      transform: translateY(-50%);
+      background: transparent;
+      border: none;
+      color: var(--muted);
+      cursor: pointer;
+      padding: 6px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 4px;
+      transition: color 0.15s ease, background 0.15s ease;
+    }
+    .unmask-btn:hover {
+      color: var(--cyan);
+      background: rgba(56, 189, 248, 0.1);
+    }
     .submit-btn {
       width: 100%;
       background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%);
@@ -872,13 +959,45 @@ function renderGateHtml(errorMsg = '') {
     <h1>SNOWGATE GATEWAY</h1>
     <div class="subtitle">Friends &amp; Family Access Control</div>
     <div class="challenge-prompt">say the password</div>
-    <form action="/gate" method="POST">
-      <input type="password" name="password" class="input-box" placeholder="answer..." autofocus autocomplete="off">
+    <form action="/gate" method="POST" id="gate-form">
+      <div class="input-wrapper">
+        <input type="password" id="gate-password-input" name="password" class="input-box" placeholder="answer..." autofocus autocomplete="off" spellcheck="false">
+        <button type="button" id="unmask-toggle-btn" class="unmask-btn" title="Show/hide password" aria-label="Show/hide password">
+          <svg id="eye-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+            <circle cx="12" cy="12" r="3"></circle>
+          </svg>
+          <svg id="eye-off-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:none;">
+            <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
+            <line x1="1" y1="1" x2="23" y2="23"></line>
+          </svg>
+        </button>
+      </div>
       <button type="submit" class="submit-btn">[ Unlock ]</button>
     </form>
     ${errorMsg ? `<div class="error-msg">${escapeHtml(errorMsg)}</div>` : ''}
     <div class="footer-note">Sovereign Protocol &bull; Exit Code Zero</div>
   </div>
+  <script>
+    (function() {
+      var pwInput = document.getElementById('gate-password-input');
+      var toggleBtn = document.getElementById('unmask-toggle-btn');
+      var eye = document.getElementById('eye-icon');
+      var eyeOff = document.getElementById('eye-off-icon');
+      if (toggleBtn && pwInput) {
+        toggleBtn.addEventListener('click', function(e) {
+          e.preventDefault();
+          var isPass = pwInput.type === 'password';
+          pwInput.type = isPass ? 'text' : 'password';
+          if (eye && eyeOff) {
+            eye.style.display = isPass ? 'none' : 'block';
+            eyeOff.style.display = isPass ? 'block' : 'none';
+          }
+          pwInput.focus();
+        });
+      }
+    })();
+  </script>
 </body>
 </html>`;
 }
@@ -936,9 +1055,9 @@ module.exports = function handler(req, res) {
         try { payload = JSON.parse(body); } catch(_) {}
       }
       const entered = (payload.password || '').trim();
-      if (entered === GATE_PASSWORD) {
+      if (verifyPassword(entered)) {
         res.writeHead(303, {
-          'Set-Cookie': `snowgate_gate=${encodeURIComponent(GATE_PASSWORD)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=2592000`,
+          'Set-Cookie': `snowgate_gate=${PRIMARY_GATE_TOKEN}; Path=/; HttpOnly; SameSite=Lax; Max-Age=2592000`,
           'Location': '/',
         });
         return res.end();
