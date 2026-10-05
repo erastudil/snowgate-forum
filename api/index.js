@@ -731,6 +731,158 @@ function renderCatalogHtml(threads) {
 </html>`;
 }
 
+const GATE_PASSWORD = 'two rivers crossing.';
+
+function isAuthorized(req) {
+  // 1. Header check
+  const headerPass = req.headers['x-snowgate-password'];
+  if (headerPass && headerPass.trim() === GATE_PASSWORD) return true;
+
+  // 2. Authorization Bearer check
+  const authHeader = req.headers['authorization'] || '';
+  if (authHeader.startsWith('Bearer ')) {
+    const token = authHeader.slice(7).trim();
+    if (token === GATE_PASSWORD) return true;
+  }
+
+  // 3. Cookie check
+  const cookieHeader = req.headers['cookie'] || '';
+  const cookies = querystring.parse(cookieHeader, '; ');
+  const val = cookies['snowgate_gate'];
+  if (val === GATE_PASSWORD || val === encodeURIComponent(GATE_PASSWORD)) {
+    return true;
+  }
+
+  return false;
+}
+
+function renderGateHtml(errorMsg = '') {
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Snowgate Gateway · say the password</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    :root {
+      --bg: #070c18;
+      --card: #0d1527;
+      --border: #1e293b;
+      --border-focus: #38bdf8;
+      --cyan: #38bdf8;
+      --text: #f8fafc;
+      --muted: #64748b;
+      --red: #f87171;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, monospace;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      padding: 20px;
+    }
+    .gate-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 36px 32px;
+      max-width: 420px;
+      width: 100%;
+      text-align: center;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.5), 0 0 20px rgba(56,189,248,0.15);
+    }
+    .emblem { margin-bottom: 16px; }
+    h1 {
+      font-size: 16px;
+      letter-spacing: 2px;
+      font-weight: 800;
+      color: #fff;
+      margin-bottom: 6px;
+      text-transform: uppercase;
+    }
+    .subtitle {
+      font-size: 12px;
+      color: var(--muted);
+      margin-bottom: 24px;
+      font-family: monospace;
+    }
+    .challenge-prompt {
+      font-size: 15px;
+      color: var(--cyan);
+      font-weight: 700;
+      margin-bottom: 14px;
+      font-family: monospace;
+    }
+    .input-box {
+      width: 100%;
+      background: #040711;
+      border: 1px solid var(--border);
+      color: #fff;
+      padding: 10px 14px;
+      font-size: 14px;
+      border-radius: 6px;
+      margin-bottom: 14px;
+      font-family: monospace;
+      text-align: center;
+      outline: none;
+      transition: border-color 0.15s ease;
+    }
+    .input-box:focus {
+      border-color: var(--border-focus);
+      box-shadow: 0 0 10px rgba(56,189,248,0.25);
+    }
+    .submit-btn {
+      width: 100%;
+      background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%);
+      border: 1px solid var(--cyan);
+      color: #fff;
+      padding: 10px;
+      font-size: 13.5px;
+      font-weight: 700;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      font-family: monospace;
+    }
+    .submit-btn:hover {
+      background: #0284c7;
+      box-shadow: 0 0 14px rgba(56,189,248,0.4);
+    }
+    .error-msg {
+      color: var(--red);
+      font-size: 12px;
+      margin-top: 12px;
+      font-family: monospace;
+    }
+    .footer-note {
+      font-size: 11px;
+      color: #475569;
+      margin-top: 24px;
+      font-family: monospace;
+    }
+  </style>
+</head>
+<body>
+  <div class="gate-card">
+    <div class="emblem">${SNOWGATE_LOGO_SVG}</div>
+    <h1>SNOWGATE GATEWAY</h1>
+    <div class="subtitle">Friends &amp; Family Access Control</div>
+    <div class="challenge-prompt">say the password</div>
+    <form action="/gate" method="POST">
+      <input type="password" name="password" class="input-box" placeholder="answer..." autofocus autocomplete="off">
+      <button type="submit" class="submit-btn">[ Unlock ]</button>
+    </form>
+    ${errorMsg ? `<div class="error-msg">${escapeHtml(errorMsg)}</div>` : ''}
+    <div class="footer-note">Sovereign Protocol &bull; Exit Code Zero</div>
+  </div>
+</body>
+</html>`;
+}
+
 // ----------------------------------------------------------------------------
 // Main Request Handler
 // ----------------------------------------------------------------------------
@@ -773,6 +925,41 @@ module.exports = function handler(req, res) {
 
   // Content negotiation
   const wantsJson = query.format === 'json' || accept.includes('application/json');
+
+  // Handle Gate Unlock POST
+  if (cleanPath === '/gate' && req.method === 'POST') {
+    let body = '';
+    req.on('data', chunk => { body += chunk; });
+    req.on('end', () => {
+      let payload = querystring.parse(body);
+      if (req.headers['content-type'] && req.headers['content-type'].includes('application/json')) {
+        try { payload = JSON.parse(body); } catch(_) {}
+      }
+      const entered = (payload.password || '').trim();
+      if (entered === GATE_PASSWORD) {
+        res.writeHead(303, {
+          'Set-Cookie': `snowgate_gate=${encodeURIComponent(GATE_PASSWORD)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=2592000`,
+          'Location': '/',
+        });
+        return res.end();
+      } else {
+        return sendHtml(401, renderGateHtml('incorrect password. try again.'));
+      }
+    });
+    return;
+  }
+
+  // Gate Check: verify password for all other endpoints
+  if (!isAuthorized(req)) {
+    if (wantsJson) {
+      return sendJson(401, {
+        error: 'Unauthorized. say the password',
+        prompt: 'say the password',
+        hint: 'pass password in X-Snowgate-Password header or Bearer token',
+      });
+    }
+    return sendHtml(401, renderGateHtml());
+  }
 
   if (req.method === 'GET' || req.method === 'HEAD') {
     // Route: Catalog
