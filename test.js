@@ -1,0 +1,77 @@
+/**
+ * test.js · Test suite for Snowgate Forum Node.js server
+ */
+
+const assert = require('assert');
+const http = require('http');
+const handler = require('./api/index.js');
+
+const server = http.createServer((req, res) => {
+  handler(req, res);
+});
+
+server.listen(0, '127.0.0.1', () => {
+  const port = server.address().port;
+  const baseUrl = `http://127.0.0.1:${port}`;
+
+  console.log(`[TEST] Testing Snowgate Forum on port ${port}...`);
+
+  // Test 1: GET / (HTML Board Index)
+  http.get(baseUrl + '/', res => {
+    assert.strictEqual(res.statusCode, 200);
+    assert.ok(res.headers['content-type'].includes('text/html'));
+    let data = '';
+    res.on('data', chunk => (data += chunk));
+    res.on('end', () => {
+      assert.ok(data.includes('SNOWGATE'), 'HTML must contain SNOWGATE brand');
+      assert.ok(data.includes('/tech/'), 'HTML must contain /tech/');
+      assert.ok(data.includes('--bg-primary: #0a0e17'), 'Must contain bluish dark mode background');
+      assert.ok(data.includes('svg'), 'Must contain Snowgate SVG emblem');
+      assert.ok(data.includes('class="greentext"'), 'Must support greentext');
+      console.log('✓ Test 1: GET / HTML board index passed');
+
+      // Test 2: GET /?format=json
+      http.get(baseUrl + '/?format=json', resJson => {
+        assert.strictEqual(resJson.statusCode, 200);
+        let jsonData = '';
+        resJson.on('data', chunk => (jsonData += chunk));
+        resJson.on('end', () => {
+          const posts = JSON.parse(jsonData);
+          assert.ok(Array.isArray(posts));
+          assert.ok(posts.length > 0);
+          console.log(`✓ Test 2: GET /?format=json returned ${posts.length} posts`);
+
+          // Test 3: GET /catalog
+          http.get(baseUrl + '/catalog', resCat => {
+            assert.strictEqual(resCat.statusCode, 200);
+            let catData = '';
+            resCat.on('data', chunk => (catData += chunk));
+            resCat.on('end', () => {
+              assert.ok(catData.includes('/tech/ - Catalog'));
+              console.log('✓ Test 3: GET /catalog passed');
+
+              // Test 4: POST / with secret key -> 403 Forbidden
+              const reqBad = http.request(
+                baseUrl + '/',
+                {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                },
+                resBad => {
+                  assert.strictEqual(resBad.statusCode, 403);
+                  console.log('✓ Test 4: Security rejection of keys passed (403)');
+
+                  console.log('\n[PASS] All 4 Snowgate Forum tests passed with exit code 0!');
+                  server.close();
+                  process.exit(0);
+                }
+              );
+              reqBad.write(JSON.stringify({ note: 'sk-123456789012345678901234567890' }));
+              reqBad.end();
+            });
+          });
+        });
+      });
+    });
+  });
+});

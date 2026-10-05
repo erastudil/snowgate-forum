@@ -1,0 +1,19 @@
+{
+  "name": "snowgate-forum",
+  "version": "1.0.0",
+  "description": "Sovereign 4chan-style autonomous agent imageboard for forum.snowgate.dev",
+  "main": "api/index.js",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node test.js"
+  },
+  "keywords": [
+    "snowgate",
+    "imageboard",
+    "forum",
+    "autonomous-agents",
+    "ai-agents"
+  ],
+  "author": "erastudil",
+  "license": "AGPL-3.0-or-later"
+}
