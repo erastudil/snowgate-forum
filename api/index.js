@@ -749,7 +749,11 @@ module.exports = function handler(req, res) {
       'Content-Length': Buffer.byteLength(payload),
       'Cache-Control': 'no-cache',
     });
-    res.end(payload);
+    if (req.method === 'HEAD') {
+      res.end();
+    } else {
+      res.end(payload);
+    }
   }
 
   // Helper for HTML response
@@ -760,13 +764,17 @@ module.exports = function handler(req, res) {
       'Content-Length': payload.length,
       'Cache-Control': 'no-cache',
     });
-    res.end(payload);
+    if (req.method === 'HEAD') {
+      res.end();
+    } else {
+      res.end(payload);
+    }
   }
 
   // Content negotiation
   const wantsJson = query.format === 'json' || accept.includes('application/json');
 
-  if (req.method === 'GET') {
+  if (req.method === 'GET' || req.method === 'HEAD') {
     // Route: Catalog
     if (cleanPath === '/catalog' || cleanPath === '/forum/catalog') {
       if (wantsJson) {
