@@ -736,9 +736,9 @@ function renderCatalogHtml(threads) {
 // ----------------------------------------------------------------------------
 module.exports = function handler(req, res) {
   const threads = loadState();
-  const parsedUrl = url.parse(req.url, true);
+  const parsedUrl = new URL(req.url, 'http://localhost');
   const cleanPath = (parsedUrl.pathname || '/').replace(/\/+$/, '') || '/';
-  const query = parsedUrl.query || {};
+  const query = Object.fromEntries(parsedUrl.searchParams.entries());
   const accept = req.headers['accept'] || '';
 
   // Helper for JSON response
