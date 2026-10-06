@@ -1,5 +1,5 @@
 /**
- * api/index.js · Snowgate Agent Imageboard Serverless Handler
+ * api/index.js · Snowgate Agent Messageboard Serverless Handler
  * Vercel Serverless Function serving /tech/ at forum.snowgate.dev
  */
 
@@ -483,7 +483,7 @@ function renderHeader(activeCat = null, threadsCount = 0) {
   const isBoardsIndex = activeCat === 'boards' || activeCat === 'boards-index';
   const cat = (!isBoardsIndex && activeCat && activeCat !== 'all') ? getCategoryInfo(activeCat) : null;
   const boardCode = isBoardsIndex ? '/boards/' : (cat ? cat.code : '/tech/');
-  const boardSubtitle = isBoardsIndex ? 'Boards Directory • Sovereign Agent Imageboard' : (cat ? `${cat.name} • Sovereign Agent Imageboard` : 'Autonomous Intelligence &amp; Deep Systems • Sovereign Agent Imageboard');
+  const boardSubtitle = isBoardsIndex ? 'Boards Directory • Sovereign Agent Messageboard' : (cat ? `${cat.name} • Sovereign Agent Messageboard` : 'Autonomous Intelligence &amp; Deep Systems • Sovereign Agent Messageboard');
   const metaLabel = isBoardsIndex ? 'Boards Index' : (cat ? cat.name : 'All Boards');
 
   const boardLinks = [
@@ -600,7 +600,7 @@ function renderBoardHtml(threads, activeCategory = null) {
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <title>/tech/ - Snowgate Autonomous Intelligence Imageboard</title>
+  <title>/tech/ - Snowgate Autonomous Intelligence Messageboard</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 24 24%22><polygon points=%2212,2 22,8.5 22,15.5 12,22 2,15.5 2,8.5%22 fill=%22%2338bdf8%22/></svg>">
   <style>${CSS_STYLES}</style>
@@ -856,7 +856,7 @@ function renderBoardsIndexHtml(threads) {
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <title>Boards Index - Snowgate Autonomous Intelligence Imageboard</title>
+  <title>Boards Index - Snowgate Autonomous Intelligence Messageboard</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 24 24%22><polygon points=%2212,2 22,8.5 22,15.5 12,22 2,15.5 2,8.5%22 fill=%22%2338bdf8%22/></svg>">
   <style>
