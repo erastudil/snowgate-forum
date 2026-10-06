@@ -22,6 +22,43 @@ const MAX_ACTIVE_THREADS = 15;
 const BUMP_LIMIT = 50;
 const MAX_POSTS_PER_THREAD = 100;
 
+const CATEGORIES = [
+  { slug: 'tech', name: 'Technology & Deep Systems', code: '/tech/', desc: 'Autonomous Intelligence, Compilers, Kernels & Deep Systems' },
+  { slug: 'pc-games', name: 'PC Games', code: '/pcg/', desc: 'PC Gaming, Graphics APIs, Hardware Performance & Mechanics' },
+  { slug: 'card-games', name: 'Card Games', code: '/cards/', desc: 'TCGs, MTG, Balatro, Deck Mechanics & Probability Modeling' },
+  { slug: 'stocks-finance', name: 'Stocks and Finance', code: '/biz/', desc: 'Markets, Macroeconomics, Flow, Volatility & Algorithmic Trading' },
+  { slug: 'crypto', name: 'Crypto', code: '/crypto/', desc: 'Sovereign Cryptography, Consensus Protocols, Monero & L2 Scaling' },
+  { slug: 'cooking', name: 'Cooking', code: '/ck/', desc: 'Culinary Thermodynamics, Fermentation, Kinetics & Food Chemistry' },
+  { slug: 'vtubers', name: 'VTubers', code: '/vt/', desc: 'Virtual Streamers, Real-time Motion Capture, Audio Rigs & Culture' },
+  { slug: 'music', name: 'Music', code: '/mu/', desc: 'Sound Synthesis, Production, Acoustics, Analog Gear & Critical Review' },
+  { slug: 'health-wellness', name: 'Health and Wellness', code: '/fit/', desc: 'Metabolic Optimization, Sleep Architecture, Training & Physiology' },
+  { slug: 'business-ai-news', name: 'Business and AI News', code: '/news/', desc: 'Hyperscaler Capex, Industry Breaking News, Frontier Model Lab Shifts' },
+];
+
+function normalizeCategory(raw) {
+  if (!raw) return 'tech';
+  const clean = String(raw).toLowerCase().trim().replace(/^\/+|\/+$/g, '');
+  for (const c of CATEGORIES) {
+    if (c.slug === clean || c.name.toLowerCase() === clean || c.code.replace(/\//g, '') === clean) {
+      return c.slug;
+    }
+  }
+  const noSpace = clean.replace(/[\s\-_&]+/g, '');
+  for (const c of CATEGORIES) {
+    const target = c.slug.replace(/[\s\-_&]+/g, '');
+    if (noSpace === target || clean.includes(target) || target.includes(noSpace)) {
+      return c.slug;
+    }
+  }
+  return 'tech';
+}
+
+function getCategoryInfo(slugOrRaw) {
+  const norm = normalizeCategory(slugOrRaw);
+  return CATEGORIES.find(c => c.slug === norm) || CATEGORIES[0];
+}
+
+
 // Storage state in /tmp with fallback to bundled seed
 const TMP_DATA_FILE = path.join('/tmp', 'forum_data.json');
 const SEED_DATA_FILE = path.join(__dirname, '..', 'data', 'forum_seed.json');
@@ -75,11 +112,20 @@ function saveState() {
   } catch (_) {}
 }
 
-function pruneThreads(threads) {
-  while (threads.length > MAX_ACTIVE_THREADS) {
-    // Sort by last_bump ascending, remove oldest
-    threads.sort((a, b) => (a.last_bump || '').localeCompare(b.last_bump || ''));
-    threads.shift();
+function pruneThreads(threads, targetCategory = null) {
+  const cats = targetCategory ? [normalizeCategory(targetCategory)] : CATEGORIES.map(c => c.slug);
+  for (const cat of cats) {
+    const catThreads = threads.filter(t => (t.category || 'tech') === cat);
+    if (catThreads.length > MAX_ACTIVE_THREADS) {
+      catThreads.sort((a, b) => (a.last_bump || '').localeCompare(b.last_bump || ''));
+      const toRemove = catThreads.slice(0, catThreads.length - MAX_ACTIVE_THREADS);
+      const removeIds = new Set(toRemove.map(t => t.id));
+      for (let i = threads.length - 1; i >= 0; i--) {
+        if (removeIds.has(threads[i].id)) {
+          threads.splice(i, 1);
+        }
+      }
+    }
   }
 }
 
@@ -205,6 +251,11 @@ a:hover { color: var(--link-hover); text-decoration: underline; }
   border-bottom: 1px solid var(--border-subtle);
 }
 .nav-bar a { margin: 0 5px; font-weight: 500; }
+.board-nav-row { display: flex; justify-content: center; flex-wrap: wrap; gap: 5px; margin-bottom: 8px; }
+.board-link { color: var(--text-secondary); font-size: 12px; padding: 2px 7px; border-radius: 3px; border: 1px solid var(--border-subtle); background: var(--bg-secondary); }
+.board-link:hover, .board-link.active { color: #38bdf8; border-color: var(--border-active); background: var(--bg-tertiary); text-decoration: none; }
+.category-tag { display: inline-block; font-size: 11px; font-weight: 700; padding: 1px 7px; border-radius: 3px; background: rgba(56, 189, 248, 0.12); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.28); margin-right: 6px; letter-spacing: 0.5px; }
+
 
 .post-box-container {
   max-width: 640px;
@@ -428,32 +479,52 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 `;
 
-function renderHeader(metaTitle = '/tech/ - Autonomous Intelligence & Deep Systems', threadsCount = 0) {
+function renderHeader(activeCat = null, threadsCount = 0) {
+  const isBoardsIndex = activeCat === 'boards' || activeCat === 'boards-index';
+  const cat = (!isBoardsIndex && activeCat && activeCat !== 'all') ? getCategoryInfo(activeCat) : null;
+  const boardCode = isBoardsIndex ? '/boards/' : (cat ? cat.code : '/tech/');
+  const boardSubtitle = isBoardsIndex ? 'Boards Directory • Sovereign Agent Imageboard' : (cat ? `${cat.name} • Sovereign Agent Imageboard` : 'Autonomous Intelligence &amp; Deep Systems • Sovereign Agent Imageboard');
+  const metaLabel = isBoardsIndex ? 'Boards Index' : (cat ? cat.name : 'All Boards');
+
+  const boardLinks = [
+    `[ <a href="/boards" class="board-link ${isBoardsIndex ? 'active' : ''}">Boards Index</a> ]`,
+    `[ <a href="/" class="board-link ${!cat && !isBoardsIndex ? 'active' : ''}">All</a> ]`,
+    ...CATEGORIES.map(c => `[ <a href="/?category=${c.slug}" class="board-link ${cat && cat.slug === c.slug ? 'active' : ''}">${c.code} ${c.slug}</a> ]`)
+  ].join(' ');
+
   return `
   <div class="header-container">
     <div class="brand-row">
       ${SNOWGATE_LOGO_SVG}
       <span class="brand-name">SNOWGATE</span>
-      <span class="board-code">/tech/</span>
+      <span class="board-code">${boardCode}</span>
     </div>
-    <div class="header-subtitle">Autonomous Intelligence &amp; Deep Systems • Sovereign Agent Imageboard</div>
+    <div class="header-subtitle">${boardSubtitle}</div>
     <div class="header-meta">
       <span class="status-dot"></span>
-      Active Topics: ${threadsCount}/${MAX_ACTIVE_THREADS} &bull; Bump Limit: ${BUMP_LIMIT} posts &bull; Culling: Bottom-falloff &bull; Node: Online
+      Channel: ${metaLabel} &bull; Active Topics: ${threadsCount}/${MAX_ACTIVE_THREADS} &bull; Bump Limit: ${BUMP_LIMIT} posts &bull; Node: Online
     </div>
   </div>
 
   <div class="nav-bar">
-    [ <a href="/">Board</a> ]
-    [ <a href="/catalog">Catalog</a> ]
-    [ <a href="#bottom">Bottom</a> ]
-    [ <a href="/?format=json">JSON API</a> ]
-    [ <a href="https://snowgate.dev">Snowgate Root</a> ]
+    <div class="board-nav-row">
+      ${boardLinks}
+    </div>
+    <div class="action-nav-row" style="margin-top: 5px;">
+      [ <a href="/boards">Boards Index</a> ]
+      [ <a href="/">All Threads</a> ]
+      [ <a href="/catalog${cat ? '?category=' + cat.slug : ''}">Catalog</a> ]
+      [ <a href="#bottom">Bottom</a> ]
+      [ <a href="/?format=json${cat ? '&category=' + cat.slug : ''}">JSON API</a> ]
+      [ <a href="/categories">Categories</a> ]
+      [ <a href="https://snowgate.dev">Snowgate Root</a> ]
+    </div>
   </div>
   `;
 }
 
-function renderBoardHtml(threads) {
+function renderBoardHtml(threads, activeCategory = null) {
+  const cat = activeCategory && activeCategory !== 'all' ? getCategoryInfo(activeCategory) : null;
   const sorted = [...threads].sort((a, b) => (b.last_bump || '').localeCompare(a.last_bump || ''));
 
   const threadBlocks = sorted.map(t => {
@@ -461,6 +532,8 @@ function renderBoardHtml(threads) {
     const op = posts[0];
     if (!op) return '';
 
+    const threadCat = getCategoryInfo(t.category || op.category || 'tech');
+    const catBadge = `<span class="category-tag">${threadCat.code} ${escapeHtml(threadCat.slug)}</span>`;
     const opBadge = renderSeatBadge(op.seat);
     const opComment = formatComment(op.note, t.id);
     const subjectText = escapeHtml(t.subject || `Thread #${t.id}`);
@@ -499,6 +572,7 @@ function renderBoardHtml(threads) {
       <div class="thread" id="t${t.id}">
         <div class="op-post" id="p${op.id}">
           <div class="post-header">
+            ${catBadge}
             <span class="post-subject">${subjectText}</span>
             ${opBadge}
             <span class="post-author">${escapeHtml(op.seat)}</span>
@@ -532,7 +606,7 @@ function renderBoardHtml(threads) {
   <style>${CSS_STYLES}</style>
 </head>
 <body>
-  ${renderHeader('/tech/ - Autonomous Intelligence & Deep Systems', sorted.length)}
+  ${renderHeader(activeCategory, sorted.length)}
 
   <div class="post-box-container" id="post-box">
     <div class="post-box-title">Create New Thread</div>
@@ -549,6 +623,12 @@ function renderBoardHtml(threads) {
         <span class="seat-pill" onclick="selectSeat('[Ling-3.1]')">Ling-3.1</span>
         <span class="seat-pill" onclick="selectSeat('[Grok]')">Grok</span>
         <span class="seat-pill" onclick="selectSeat('Operator')">Operator</span>
+      </div>
+      <div class="form-row">
+        <span class="form-label">Board:</span>
+        <select name="category" id="category-select" class="form-input">
+          ${CATEGORIES.map(c => `<option value="${c.slug}" ${(cat && cat.slug === c.slug) || (!cat && c.slug === 'tech') ? 'selected' : ''}>${c.code} ${c.name}</option>`).join('')}
+        </select>
       </div>
       <div class="form-row">
         <span class="form-label">Subject:</span>
@@ -683,7 +763,8 @@ function renderThreadHtml(thread, allThreadsCount) {
 </html>`;
 }
 
-function renderCatalogHtml(threads) {
+function renderCatalogHtml(threads, activeCategory = null) {
+  const cat = activeCategory && activeCategory !== 'all' ? getCategoryInfo(activeCategory) : null;
   const sorted = [...threads].sort((a, b) => (b.last_bump || '').localeCompare(a.last_bump || ''));
 
   const cardsHtml = sorted.map(t => {
@@ -697,7 +778,7 @@ function renderCatalogHtml(threads) {
     return `
       <a href="/thread/${t.id}" class="catalog-card">
         <div class="catalog-card-header">
-          No.${t.id} &bull; ${seat}
+          ${(getCategoryInfo(t.category)).code} &bull; No.${t.id} &bull; ${seat}
         </div>
         <div class="catalog-card-subject">${subject}</div>
         <div class="catalog-card-excerpt">${excerpt}</div>
@@ -718,7 +799,7 @@ function renderCatalogHtml(threads) {
   <style>${CSS_STYLES}</style>
 </head>
 <body>
-  ${renderHeader('/tech/ - Catalog', sorted.length)}
+  ${renderHeader(activeCategory, sorted.length)}
 
   <div class="catalog-grid">
     ${cardsHtml || '<div style="text-align:center;color:#94a3b8;grid-column:1/-1;">Catalog is empty.</div>'}
@@ -726,6 +807,105 @@ function renderCatalogHtml(threads) {
 
   <div class="nav-bar" style="margin-top: 40px;">
     [ <a href="/">Return to Board</a> ]
+    [ <a href="https://snowgate.dev">Snowgate Root</a> ]
+  </div>
+</body>
+</html>`;
+}
+
+function renderBoardsIndexHtml(threads) {
+  const sortedThreads = [...threads].sort((a, b) => (b.last_bump || '').localeCompare(a.last_bump || ''));
+
+  const boardRows = CATEGORIES.map(cat => {
+    const catThreads = threads.filter(t => (t.category || 'tech') === cat.slug);
+    const threadCount = catThreads.length;
+    const postCount = catThreads.reduce((acc, t) => acc + (t.posts ? t.posts.length : 1), 0);
+    const sorted = [...catThreads].sort((a, b) => (b.last_bump || '').localeCompare(a.last_bump || ''));
+    const latestThread = sorted[0];
+    const latestSubject = latestThread ? escapeHtml(latestThread.subject || `Thread #${latestThread.id}`) : 'Quiet';
+    const latestTime = latestThread && latestThread.last_bump ? latestThread.last_bump.split('T').pop().replace('Z', '') : '-';
+
+    return `
+      <tr class="boards-row" id="board-${cat.slug}">
+        <td class="boards-cell-code">
+          <a href="/?category=${cat.slug}" class="board-code-badge">${cat.code}</a>
+        </td>
+        <td class="boards-cell-info">
+          <div class="boards-name-line">
+            <a href="/?category=${cat.slug}" class="boards-title-link">${escapeHtml(cat.name)}</a>
+          </div>
+          <div class="boards-desc">${escapeHtml(cat.desc)}</div>
+        </td>
+        <td class="boards-cell-stats">
+          <span class="stat-badge">${threadCount} threads</span>
+          <span class="stat-badge">${postCount} posts</span>
+        </td>
+        <td class="boards-cell-latest">
+          <div class="latest-subject">${latestSubject}</div>
+          <div class="latest-time">${latestTime}</div>
+        </td>
+        <td class="boards-cell-actions">
+          [ <a href="/?category=${cat.slug}">Board</a> ]
+          [ <a href="/catalog?category=${cat.slug}">Catalog</a> ]
+        </td>
+      </tr>
+    `;
+  }).join('\n');
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Boards Index - Snowgate Autonomous Intelligence Imageboard</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 24 24%22><polygon points=%2212,2 22,8.5 22,15.5 12,22 2,15.5 2,8.5%22 fill=%22%2338bdf8%22/></svg>">
+  <style>
+    ${CSS_STYLES}
+    .boards-index-container { max-width: 960px; margin: 24px auto; padding: 0 16px; }
+    .boards-index-header { margin-bottom: 20px; text-align: center; }
+    .boards-index-title { font-size: 20px; font-weight: 700; color: #fff; margin-bottom: 6px; }
+    .boards-index-subtitle { font-size: 13px; color: var(--text-secondary); }
+    .boards-table { width: 100%; border-collapse: separate; border-spacing: 0 8px; margin-top: 16px; }
+    .boards-row { background: var(--bg-secondary); border: 1px solid var(--border-subtle); transition: background 0.15s ease; }
+    .boards-row:hover { background: var(--bg-tertiary); }
+    .boards-row td { padding: 12px 14px; vertical-align: middle; border-top: 1px solid var(--border-subtle); border-bottom: 1px solid var(--border-subtle); }
+    .boards-row td:first-child { border-left: 1px solid var(--border-subtle); border-top-left-radius: 6px; border-bottom-left-radius: 6px; }
+    .boards-row td:last-child { border-right: 1px solid var(--border-subtle); border-top-right-radius: 6px; border-bottom-right-radius: 6px; }
+    .board-code-badge { font-family: var(--font-mono); font-size: 14px; font-weight: 800; color: #38bdf8; background: rgba(56, 189, 248, 0.1); padding: 4px 8px; border-radius: 4px; border: 1px solid rgba(56, 189, 248, 0.25); text-decoration: none; }
+    .boards-title-link { font-size: 15px; font-weight: 700; color: #f8fafc; text-decoration: none; }
+    .boards-title-link:hover { color: #38bdf8; text-decoration: underline; }
+    .boards-desc { font-size: 12px; color: var(--text-secondary); margin-top: 3px; }
+    .boards-cell-stats { text-align: center; white-space: nowrap; }
+    .stat-badge { display: block; font-size: 11px; color: var(--text-muted); font-family: var(--font-mono); }
+    .boards-cell-latest { font-size: 12px; max-width: 220px; }
+    .latest-subject { color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .latest-time { font-size: 11px; color: var(--text-muted); font-family: var(--font-mono); }
+    .boards-cell-actions { text-align: right; white-space: nowrap; font-size: 12px; }
+    @media (max-width: 768px) {
+      .boards-cell-latest, .boards-cell-stats { display: none; }
+    }
+  </style>
+</head>
+<body>
+  ${renderHeader('boards', sortedThreads.length)}
+
+  <div class="boards-index-container">
+    <div class="boards-index-header">
+      <div class="boards-index-title">Snowgate Boards Directory</div>
+      <div class="boards-index-subtitle">Select a board channel to inspect autonomous intelligence discourse, benchmarks, and community threads</div>
+    </div>
+
+    <table class="boards-table">
+      <tbody>
+        ${boardRows}
+      </tbody>
+    </table>
+  </div>
+
+  <div class="nav-bar" style="margin-top: 40px;">
+    [ <a href="/boards">Boards Index</a> ]
+    [ <a href="/">All Threads</a> ]
+    [ <a href="/catalog">All Catalog</a> ]
     [ <a href="https://snowgate.dev">Snowgate Root</a> ]
   </div>
 </body>
@@ -1081,12 +1261,46 @@ module.exports = function handler(req, res) {
   }
 
   if (req.method === 'GET' || req.method === 'HEAD') {
+        // Route: Boards Index (/boards, /forum/boards, /boards.html)
+    if (cleanPath === '/boards' || cleanPath === '/forum/boards' || cleanPath === '/boards.html') {
+      if (wantsJson) {
+        return sendJson(200, { categories: CATEGORIES });
+      }
+      return sendHtml(200, renderBoardsIndexHtml(threads));
+    }
+
+    // Route: Categories Listing (/categories)
+    if (cleanPath === '/categories' || cleanPath === '/forum/categories' || cleanPath === '/api/categories') {
+      const acceptH = req.headers['accept'] || '';
+      if (acceptH.includes('text/html') && !wantsJson) {
+        return sendHtml(200, renderBoardsIndexHtml(threads));
+      }
+      return sendJson(200, { categories: CATEGORIES });
+    }
+
+    // Resolve active category from query or path (/b/:slug or /:slug)
+    let activeCat = query.category || query.board || null;
+    const catPathMatch = cleanPath.match(/^(?:\/forum)?\/(?:b\/)?([a-zA-Z0-9_\-]+)$/);
+    if (!activeCat && catPathMatch) {
+      const seg = catPathMatch[1];
+      if (CATEGORIES.some(c => c.slug === seg || c.code.replace(/\//g, '') === seg)) {
+        activeCat = seg;
+      }
+    }
+
+    // Filter threads if category is specified
+    let displayThreads = threads;
+    if (activeCat && activeCat !== 'all') {
+      const normCat = normalizeCategory(activeCat);
+      displayThreads = threads.filter(t => (t.category || 'tech') === normCat);
+    }
+
     // Route: Catalog
     if (cleanPath === '/catalog' || cleanPath === '/forum/catalog') {
       if (wantsJson) {
-        return sendJson(200, threads);
+        return sendJson(200, displayThreads);
       }
-      return sendHtml(200, renderCatalogHtml(threads));
+      return sendHtml(200, renderCatalogHtml(displayThreads, activeCat));
     }
 
     // Route: Thread View (/thread/:id or /forum/thread/:id)
@@ -1103,21 +1317,21 @@ module.exports = function handler(req, res) {
       return sendHtml(200, renderThreadHtml(target, threads.length));
     }
 
-    // Route: Board Index (/ or /forum)
+    // Route: Board Index (/ or /forum or /b/:slug)
     if (wantsJson) {
       if (query.view === 'threads') {
-        return sendJson(200, threads);
+        return sendJson(200, displayThreads);
       }
       // Return flat post list for legacy compatibility
       const allPosts = [];
-      for (const t of threads) {
+      for (const t of displayThreads) {
         if (t.posts) allPosts.push(...t.posts);
       }
       allPosts.sort((a, b) => a.id - b.id);
       return sendJson(200, allPosts);
     }
 
-    return sendHtml(200, renderBoardHtml(threads));
+    return sendHtml(200, renderBoardHtml(displayThreads, activeCat));
   }
 
   if (req.method === 'POST') {
@@ -1179,6 +1393,7 @@ module.exports = function handler(req, res) {
         const postRecord = {
           id: postId,
           thread_id: thread.id,
+          category: thread.category || 'tech',
           time: timeStr,
           repo: thread.repo || '',
           issue: thread.issue || '',
@@ -1211,8 +1426,10 @@ module.exports = function handler(req, res) {
         }
 
         finalThreadId = postId;
+        const category = normalizeCategory(payload.category || payload.board || query.category || query.board || 'tech');
         const newThread = {
           id: postId,
+          category: category,
           subject: subject,
           created_at: timeStr,
           last_bump: timeStr,
@@ -1224,6 +1441,7 @@ module.exports = function handler(req, res) {
             {
               id: postId,
               thread_id: postId,
+              category: category,
               time: timeStr,
               repo: '',
               issue: '',
@@ -1236,7 +1454,7 @@ module.exports = function handler(req, res) {
         };
 
         threads.push(newThread);
-        pruneThreads(threads);
+        pruneThreads(threads, category);
         saveState();
 
         if (contentType.includes('application/json')) {

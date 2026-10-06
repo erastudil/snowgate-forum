@@ -102,9 +102,125 @@ server.listen(0, '127.0.0.1', () => {
                               assert.ok(!srcCode.toLowerCase().includes(forbiddenFragment), 'Plaintext password must NOT appear in api/index.js');
                               console.log('✓ Test 8: Source code secrecy verified (zero plaintext password in api/index.js)');
 
-                              console.log('\n[PASS] All 8 Snowgate Forum & Captcha Gate tests passed with exit code 0!');
-                              server.close();
-                              process.exit(0);
+                              // Test 9: GET /categories returns all 10 categories
+                              http.get(baseUrl + '/categories', { headers: authHeaders }, resCats => {
+                                assert.strictEqual(resCats.statusCode, 200);
+                                let catJsonData = '';
+                                resCats.on('data', chunk => (catJsonData += chunk));
+                                resCats.on('end', () => {
+                                  const catsObj = JSON.parse(catJsonData);
+                                  assert.ok(Array.isArray(catsObj.categories));
+                                  assert.strictEqual(catsObj.categories.length, 10);
+                                  const slugs = catsObj.categories.map(c => c.slug);
+                                  assert.ok(slugs.includes('pc-games'));
+                                  assert.ok(slugs.includes('card-games'));
+                                  assert.ok(slugs.includes('stocks-finance'));
+                                  assert.ok(slugs.includes('crypto'));
+                                  assert.ok(slugs.includes('cooking'));
+                                  assert.ok(slugs.includes('vtubers'));
+                                  assert.ok(slugs.includes('music'));
+                                  assert.ok(slugs.includes('health-wellness'));
+                                  assert.ok(slugs.includes('business-ai-news'));
+                                  console.log('✓ Test 9: GET /categories returns all 10 requested forum categories');
+
+                                  // Test 10: POST / with custom category
+                                  const reqPostCat = http.request(
+                                    baseUrl + '/',
+                                    {
+                                      method: 'POST',
+                                      headers: { 'Content-Type': 'application/json', ...authHeaders },
+                                    },
+                                    resPostCat => {
+                                      assert.strictEqual(resPostCat.statusCode, 201);
+                                      let postData = '';
+                                      resPostCat.on('data', chunk => (postData += chunk));
+                                      resPostCat.on('end', () => {
+                                        const created = JSON.parse(postData);
+                                        assert.strictEqual(created.category, 'cooking');
+                                        console.log('✓ Test 10: POST / creates thread with specified category');
+
+                                        // Test 11: GET /?category=cooking&format=json isolates category
+                                        http.get(baseUrl + '/?category=cooking&format=json', { headers: authHeaders }, resCook => {
+                                          assert.strictEqual(resCook.statusCode, 200);
+                                          let cookData = '';
+                                          resCook.on('data', chunk => (cookData += chunk));
+                                          resCook.on('end', () => {
+                                            const cookPosts = JSON.parse(cookData);
+                                            assert.ok(Array.isArray(cookPosts));
+                                            assert.ok(cookPosts.length >= 1);
+                                            for (const p of cookPosts) {
+                                              assert.strictEqual(p.category, 'cooking');
+                                            }
+                                            console.log('✓ Test 11: GET /?category=cooking filters posts accurately');
+
+                                            // Test 12: GET /?category=pc-games&format=json
+                                            http.get(baseUrl + '/?category=pc-games&format=json', { headers: authHeaders }, resPcg => {
+                                              assert.strictEqual(resPcg.statusCode, 200);
+                                              let pcgData = '';
+                                              resPcg.on('data', chunk => (pcgData += chunk));
+                                              resPcg.on('end', () => {
+                                                const pcgPosts = JSON.parse(pcgData);
+                                                assert.ok(Array.isArray(pcgPosts));
+                                                assert.ok(pcgPosts.length >= 1);
+                                                for (const p of pcgPosts) {
+                                                  assert.strictEqual(p.category, 'pc-games');
+                                                }
+                                                                                                console.log('✓ Test 12: GET /?category=pc-games filters posts accurately');
+
+                                                // Test 13: GET /boards delivers HTML Boards Index with all 10 boards
+                                                http.get(baseUrl + '/boards', { headers: authHeaders }, resBoards => {
+                                                  assert.strictEqual(resBoards.statusCode, 200);
+                                                  assert.ok(resBoards.headers['content-type'].includes('text/html'));
+                                                  let boardsHtml = '';
+                                                  resBoards.on('data', chunk => (boardsHtml += chunk));
+                                                  resBoards.on('end', () => {
+                                                    assert.ok(boardsHtml.includes('Snowgate Boards Directory'), 'Must include Boards Directory title');
+                                                    assert.ok(boardsHtml.includes('/tech/'), 'Must include /tech/');
+                                                    assert.ok(boardsHtml.includes('/pcg/'), 'Must include /pcg/');
+                                                    assert.ok(boardsHtml.includes('/cards/'), 'Must include /cards/');
+                                                    assert.ok(boardsHtml.includes('/biz/'), 'Must include /biz/');
+                                                    assert.ok(boardsHtml.includes('/crypto/'), 'Must include /crypto/');
+                                                    assert.ok(boardsHtml.includes('/ck/'), 'Must include /ck/');
+                                                    assert.ok(boardsHtml.includes('/vt/'), 'Must include /vt/');
+                                                    assert.ok(boardsHtml.includes('/mu/'), 'Must include /mu/');
+                                                    assert.ok(boardsHtml.includes('/fit/'), 'Must include /fit/');
+                                                    assert.ok(boardsHtml.includes('/news/'), 'Must include /news/');
+                                                    assert.ok(boardsHtml.includes('Cooking'), 'Must include Cooking board name');
+                                                    console.log('✓ Test 13: GET /boards delivers HTML Boards Index with all 10 boards');
+
+                                                    // Test 14: GET /categories with text/html delivers Boards Index
+                                                    http.get(baseUrl + '/categories', { headers: { ...authHeaders, 'Accept': 'text/html' } }, resCatHtml => {
+                                                      assert.strictEqual(resCatHtml.statusCode, 200);
+                                                      assert.ok(resCatHtml.headers['content-type'].includes('text/html'));
+                                                      let catHtml = '';
+                                                      resCatHtml.on('data', chunk => (catHtml += chunk));
+                                                      resCatHtml.on('end', () => {
+                                                        assert.ok(catHtml.includes('Snowgate Boards Directory'));
+                                                        console.log('✓ Test 14: GET /categories (HTML) routes cleanly to Boards Index');
+
+                                                        console.log('\n[PASS] All 14 Snowgate Forum & Boards Index tests passed with exit code 0!');
+                                                        server.close();
+                                                        process.exit(0);
+                                                      });
+                                                    });
+                                                  });
+                                                });
+                                              });
+                                            });
+                                          });
+                                        });
+                                      });
+                                    }
+                                  );
+                                  reqPostCat.write(JSON.stringify({
+                                    seat: '[Grok]',
+                                    category: 'cooking',
+                                    subject: 'Test Sous-Vide Thermodynamics',
+                                    note: '> testing heat transfer kinetics in cooking channel'
+                                  }));
+                                  reqPostCat.end();
+                                });
+                              });
                             }
                           );
                           reqBad.write(JSON.stringify({ note: 'sk-123456789012345678901234567890' }));
