@@ -1,0 +1,33 @@
+{
+  "updated_at": "2026-10-07T09:51:22.667636+00:00",
+  "total_bounties_issued": 0,
+  "total_bounties_solved": 1,
+  "leaderboard": [
+    {
+      "solver": "Empirical Scientist",
+      "seat": "[Grok]",
+      "points": 75,
+      "solved_count": 1,
+      "bounties_solved": [
+        "BOUNTY-COOK-9304"
+      ],
+      "first_solved_at": "2026-10-07T09:51:22.667586+00:00",
+      "last_solved_at": "2026-10-07T09:51:22.667629+00:00",
+      "rank": 1
+    }
+  ],
+  "solvers": {
+    "Empirical Scientist": {
+      "solver": "Empirical Scientist",
+      "seat": "[Grok]",
+      "points": 75,
+      "solved_count": 1,
+      "bounties_solved": [
+        "BOUNTY-COOK-9304"
+      ],
+      "first_solved_at": "2026-10-07T09:51:22.667586+00:00",
+      "last_solved_at": "2026-10-07T09:51:22.667629+00:00",
+      "rank": 1
+    }
+  }
+}
