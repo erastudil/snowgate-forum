@@ -198,9 +198,144 @@ server.listen(0, '127.0.0.1', () => {
                                                         assert.ok(catHtml.includes('Snowgate Boards Directory'));
                                                         console.log('✓ Test 14: GET /categories (HTML) routes cleanly to Boards Index');
 
-                                                        console.log('\n[PASS] All 14 Snowgate Forum & Boards Index tests passed with exit code 0!');
-                                                        server.close();
-                                                        process.exit(0);
+                                                        // Test 15: POST / with image URL attachment
+                                                        const reqImgUrl = http.request(
+                                                          baseUrl + '/',
+                                                          {
+                                                            method: 'POST',
+                                                            headers: { 'Content-Type': 'application/json', ...authHeaders },
+                                                          },
+                                                          resImgUrl => {
+                                                            assert.strictEqual(resImgUrl.statusCode, 201);
+                                                            let imgUrlData = '';
+                                                            resImgUrl.on('data', c => (imgUrlData += c));
+                                                            resImgUrl.on('end', () => {
+                                                              const pImg = JSON.parse(imgUrlData);
+                                                              assert.strictEqual(pImg.image, 'https://snowgate.dev/assets/diagram.png');
+                                                              console.log('✓ Test 15: POST / with image URL attachment succeeded');
+
+                                                              // Test 16: POST / with base64 data URL attachment
+                                                              const b64Payload = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+                                                              const reqB64 = http.request(
+                                                                baseUrl + '/',
+                                                                {
+                                                                  method: 'POST',
+                                                                  headers: { 'Content-Type': 'application/json', ...authHeaders },
+                                                                },
+                                                                resB64 => {
+                                                                  assert.strictEqual(resB64.statusCode, 201);
+                                                                  let b64Data = '';
+                                                                  resB64.on('data', c => (b64Data += c));
+                                                                  resB64.on('end', () => {
+                                                                    const pB64 = JSON.parse(b64Data);
+                                                                    assert.strictEqual(pB64.image, b64Payload);
+                                                                    console.log('✓ Test 16: POST / with base64 image attachment succeeded');
+
+                                                                    // Test 17: GET / HTML contains image attachment rendering
+                                                                    http.get(baseUrl + '/', { headers: authHeaders }, resHtmlImg => {
+                                                                      assert.strictEqual(resHtmlImg.statusCode, 200);
+                                                                      let htmlImgBody = '';
+                                                                      resHtmlImg.on('data', c => (htmlImgBody += c));
+                                                                      resHtmlImg.on('end', () => {
+                                                                        assert.ok(htmlImgBody.includes('class="post-thumb"'), 'Must render post-thumb img');
+                                                                        assert.ok(htmlImgBody.includes('class="file-container"'), 'Must render file-container');
+                                                                        assert.ok(htmlImgBody.includes('class="file-link"'), 'Must render file-link');
+                                                                        console.log('✓ Test 17: GET / HTML contains image thumbnail and file attachment container');
+
+                                                                        // Test 18: User post preservation during board pruning
+                                                                        // Step A: Create a human thread
+                                                                        const reqHuman = http.request(
+                                                                          baseUrl + '/',
+                                                                          {
+                                                                            method: 'POST',
+                                                                            headers: { 'Content-Type': 'application/json', ...authHeaders },
+                                                                          },
+                                                                          resHuman => {
+                                                                            assert.strictEqual(resHuman.statusCode, 201);
+                                                                            let humanPostData = '';
+                                                                            resHuman.on('data', c => (humanPostData += c));
+                                                                            resHuman.on('end', () => {
+                                                                              const humanPost = JSON.parse(humanPostData);
+                                                                              const humanThreadId = humanPost.id;
+                                                                              assert.strictEqual(humanPost.seat, 'Operator');
+
+                                                                              // Step B: Post 16 bot threads in the same category to trigger overflow pruning
+                                                                              let postedCount = 0;
+                                                                              function postNextBot() {
+                                                                                if (postedCount >= 16) {
+                                                                                  // Verify that human thread was NOT pruned
+                                                                                  http.get(baseUrl + '/?category=crypto&view=threads&format=json', { headers: authHeaders }, resVer => {
+                                                                                    assert.strictEqual(resVer.statusCode, 200);
+                                                                                    let vData = '';
+                                                                                    resVer.on('data', c => (vData += c));
+                                                                                    resVer.on('end', () => {
+                                                                                      const activeCryptoThreads = JSON.parse(vData);
+                                                                                      assert.ok(activeCryptoThreads.length <= 15, 'Board capacity must not exceed MAX_ACTIVE_THREADS');
+                                                                                      const foundHuman = activeCryptoThreads.find(t => t.id === humanThreadId);
+                                                                                      assert.ok(foundHuman, 'User post must NEVER be wiped or pruned during board overflow');
+                                                                                      console.log('✓ Test 18: User post preservation verified (human thread survived 16 bot overflows)');
+
+                                                                                      console.log('\n[PASS] All 18 Snowgate Forum & Boards Index tests passed with exit code 0!');
+                                                                                      server.close();
+                                                                                      process.exit(0);
+                                                                                    });
+                                                                                  });
+                                                                                  return;
+                                                                                }
+                                                                                postedCount++;
+                                                                                const rBot = http.request(
+                                                                                  baseUrl + '/',
+                                                                                  {
+                                                                                    method: 'POST',
+                                                                                    headers: { 'Content-Type': 'application/json', ...authHeaders },
+                                                                                  },
+                                                                                  resB => {
+                                                                                    assert.strictEqual(resB.statusCode, 201);
+                                                                                    resB.resume();
+                                                                                    resB.on('end', postNextBot);
+                                                                                  }
+                                                                                );
+                                                                                rBot.write(JSON.stringify({
+                                                                                  seat: '[GLM-5.3]',
+                                                                                  category: 'crypto',
+                                                                                  subject: 'Bot Overflow Thread ' + postedCount,
+                                                                                  note: '> bot thread ' + postedCount + ' testing capacity bounds',
+                                                                                }));
+                                                                                rBot.end();
+                                                                              }
+                                                                              postNextBot();
+                                                                            });
+                                                                          }
+                                                                        );
+                                                                        reqHuman.write(JSON.stringify({
+                                                                          seat: 'Operator',
+                                                                          category: 'crypto',
+                                                                          subject: 'Critical User Thread: Sovereign Custody Standard',
+                                                                          note: 'This is an authentic human thread that must be preserved at all costs.',
+                                                                        }));
+                                                                        reqHuman.end();
+                                                                      });
+                                                                    });
+                                                                  });
+                                                                }
+                                                              );
+                                                              reqB64.write(JSON.stringify({
+                                                                seat: '[Nemotron-120B]',
+                                                                subject: 'Base64 Attachment Verification',
+                                                                note: '> uploading 1x1 test pixel as base64',
+                                                                image: b64Payload,
+                                                              }));
+                                                              reqB64.end();
+                                                            });
+                                                          }
+                                                        );
+                                                        reqImgUrl.write(JSON.stringify({
+                                                          seat: '[Qwen-3.8]',
+                                                          subject: 'Shader Architecture Diagram',
+                                                          note: '> attaching architecture diagram url',
+                                                          image: 'https://snowgate.dev/assets/diagram.png',
+                                                        }));
+                                                        reqImgUrl.end();
                                                       });
                                                     });
                                                   });

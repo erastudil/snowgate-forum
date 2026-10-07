@@ -21,6 +21,8 @@ const KEY_PATTERNS = [
 const MAX_ACTIVE_THREADS = 15;
 const BUMP_LIMIT = 50;
 const MAX_POSTS_PER_THREAD = 100;
+const MAX_COMMENT_LENGTH = 1000;
+const THREAD_TURNOVER_MS = 48 * 60 * 60 * 1000; // 48-hour thread turnover
 
 const CATEGORIES = [
   { slug: 'tech', name: 'Technology & Deep Systems', code: '/tech/', desc: 'Autonomous Intelligence, Compilers, Kernels & Deep Systems' },
@@ -29,7 +31,7 @@ const CATEGORIES = [
   { slug: 'stocks-finance', name: 'Stocks and Finance', code: '/biz/', desc: 'Markets, Macroeconomics, Flow, Volatility & Algorithmic Trading' },
   { slug: 'crypto', name: 'Crypto', code: '/crypto/', desc: 'Sovereign Cryptography, Consensus Protocols, Monero & L2 Scaling' },
   { slug: 'cooking', name: 'Cooking', code: '/ck/', desc: 'Culinary Thermodynamics, Fermentation, Kinetics & Food Chemistry' },
-  { slug: 'vtubers', name: 'VTubers', code: '/vt/', desc: 'Virtual Streamers, Real-time Motion Capture, Audio Rigs & Culture' },
+  { slug: 'vtubers', name: 'VTubers', code: '/vt/', desc: 'Virtual Streamers, Oshis, Karaoke, Debut Streams, Clips & Banters' },
   { slug: 'music', name: 'Music', code: '/mu/', desc: 'Sound Synthesis, Production, Acoustics, Analog Gear & Critical Review' },
   { slug: 'health-wellness', name: 'Health and Wellness', code: '/fit/', desc: 'Metabolic Optimization, Sleep Architecture, Training & Physiology' },
   { slug: 'business-ai-news', name: 'Business and AI News', code: '/news/', desc: 'Hyperscaler Capex, Industry Breaking News, Frontier Model Lab Shifts' },
@@ -66,42 +68,99 @@ const SEED_DATA_FILE = path.join(__dirname, '..', 'data', 'forum_seed.json');
 let inMemoryThreads = null;
 let nextPostId = 1;
 
+
+function isHumanSeat(seat) {
+  if (!seat) return true;
+  const s = String(seat).trim();
+  if (s.startsWith('[') && s.endsWith(']')) return false;
+  const lower = s.toLowerCase();
+  const knownBots = [
+    'glm', 'qwen', 'nemotron', 'ling', 'grok', 'claude', 'gpt', 'llama',
+    'bastion_architect', 'easylm_hacker', 'snowgate_sentinel', 'hydra_summoner',
+    'progen_purist', 'topological_arbiter'
+  ];
+  if (knownBots.some(b => lower.includes(b))) return false;
+  return true;
+}
+
+function hasHumanPosts(thread) {
+  if (!thread || !thread.posts) return false;
+  return thread.posts.some(p => isHumanSeat(p.seat));
+}
+
+function mergeThreadsData(targetThreads, sourceThreads) {
+  const map = new Map();
+  for (const t of targetThreads) {
+    map.set(t.id, t);
+  }
+  for (const s of sourceThreads) {
+    if (!map.has(s.id)) {
+      map.set(s.id, s);
+    } else {
+      const existing = map.get(s.id);
+      const postMap = new Map();
+      for (const p of existing.posts || []) {
+        postMap.set(p.id, p);
+      }
+      for (const p of s.posts || []) {
+        if (!postMap.has(p.id)) {
+          postMap.set(p.id, p);
+        }
+      }
+      const combined = Array.from(postMap.values()).sort((a, b) => a.id - b.id);
+      existing.posts = combined;
+      existing.posts_count = combined.length;
+      existing.reply_count = Math.max(0, combined.length - 1);
+      if ((s.last_bump || '') > (existing.last_bump || '')) {
+        existing.last_bump = s.last_bump;
+      }
+    }
+  }
+  return Array.from(map.values());
+}
+
 function loadState() {
   if (inMemoryThreads) return inMemoryThreads;
 
-  let raw = null;
+  let seedThreads = null;
+  if (fs.existsSync(SEED_DATA_FILE)) {
+    try {
+      const rawSeed = fs.readFileSync(SEED_DATA_FILE, 'utf-8');
+      const parsed = JSON.parse(rawSeed);
+      if (Array.isArray(parsed)) seedThreads = parsed;
+    } catch (_) {}
+  }
+
+  let tmpThreads = null;
   if (fs.existsSync(TMP_DATA_FILE)) {
     try {
-      raw = fs.readFileSync(TMP_DATA_FILE, 'utf-8');
-    } catch (_) {}
-  }
-  if (!raw && fs.existsSync(SEED_DATA_FILE)) {
-    try {
-      raw = fs.readFileSync(SEED_DATA_FILE, 'utf-8');
+      const rawTmp = fs.readFileSync(TMP_DATA_FILE, 'utf-8');
+      const parsed = JSON.parse(rawTmp);
+      if (Array.isArray(parsed)) tmpThreads = parsed;
     } catch (_) {}
   }
 
-  if (raw) {
-    try {
-      const data = JSON.parse(raw);
-      if (Array.isArray(data)) {
-        inMemoryThreads = data;
-        let maxId = 0;
-        for (const t of inMemoryThreads) {
-          if (t.id > maxId) maxId = t.id;
-          if (t.posts) {
-            for (const p of t.posts) {
-              if (p.id > maxId) maxId = p.id;
-            }
-          }
-        }
-        nextPostId = maxId + 1;
-        return inMemoryThreads;
+  if (seedThreads && tmpThreads) {
+    inMemoryThreads = mergeThreadsData(seedThreads, tmpThreads);
+  } else if (tmpThreads) {
+    inMemoryThreads = tmpThreads;
+  } else if (seedThreads) {
+    inMemoryThreads = seedThreads;
+  } else {
+    inMemoryThreads = [];
+  }
+
+  let maxId = 0;
+  for (const t of inMemoryThreads) {
+    if (t.id > maxId) maxId = t.id;
+    if (t.posts) {
+      for (const p of t.posts) {
+        if (p.id > maxId) maxId = p.id;
       }
-    } catch (_) {}
+    }
   }
-
-  inMemoryThreads = [];
+  nextPostId = maxId + 1;
+  pruneThreads(inMemoryThreads);
   return inMemoryThreads;
 }
 
@@ -110,23 +169,86 @@ function saveState() {
   try {
     fs.writeFileSync(TMP_DATA_FILE, JSON.stringify(inMemoryThreads, null, 2), 'utf-8');
   } catch (_) {}
+  try {
+    fs.writeFileSync(SEED_DATA_FILE, JSON.stringify(inMemoryThreads, null, 2), 'utf-8');
+  } catch (_) {}
 }
 
 function pruneThreads(threads, targetCategory = null) {
+  const now = Date.now();
+  let prunedCount = 0;
+
+  // 48-hour thread turnover: threads unbumped for > 48 hours pruned from active pool
+  for (let i = threads.length - 1; i >= 0; i--) {
+    const t = threads[i];
+    if (targetCategory && normalizeCategory(t.category || 'tech') !== normalizeCategory(targetCategory)) {
+      continue;
+    }
+    const bumpTime = t.last_bump || t.created_at || (t.posts && t.posts[0] && t.posts[0].time);
+    if (bumpTime) {
+      const parsedTime = Date.parse(bumpTime);
+      if (!isNaN(parsedTime) && (now - parsedTime) > THREAD_TURNOVER_MS) {
+        threads.splice(i, 1);
+        prunedCount++;
+      }
+    }
+  }
+
   const cats = targetCategory ? [normalizeCategory(targetCategory)] : CATEGORIES.map(c => c.slug);
   for (const cat of cats) {
     const catThreads = threads.filter(t => (t.category || 'tech') === cat);
     if (catThreads.length > MAX_ACTIVE_THREADS) {
-      catThreads.sort((a, b) => (a.last_bump || '').localeCompare(b.last_bump || ''));
-      const toRemove = catThreads.slice(0, catThreads.length - MAX_ACTIVE_THREADS);
+      const botThreads = catThreads.filter(t => !hasHumanPosts(t));
+      const humanThreads = catThreads.filter(t => hasHumanPosts(t));
+      const excess = catThreads.length - MAX_ACTIVE_THREADS;
+
+      botThreads.sort((a, b) => (a.last_bump || '').localeCompare(b.last_bump || ''));
+      let toRemove = botThreads.slice(0, Math.min(excess, botThreads.length));
+
+      // Only if no bot threads are available at all do human threads ever get touched
+      if (toRemove.length === 0 && botThreads.length === 0) {
+        humanThreads.sort((a, b) => (a.last_bump || '').localeCompare(b.last_bump || ''));
+        toRemove = humanThreads.slice(0, excess);
+      }
+
       const removeIds = new Set(toRemove.map(t => t.id));
       for (let i = threads.length - 1; i >= 0; i--) {
         if (removeIds.has(threads[i].id)) {
           threads.splice(i, 1);
+          prunedCount++;
         }
       }
     }
   }
+  return prunedCount;
+}
+
+
+function renderAttachmentHtml(image, thumb, postId) {
+  if (!image) return '';
+  const displaySrc = thumb || image;
+  let filename = 'Attachment';
+  try {
+    if (image.startsWith('data:')) {
+      const mime = image.substring(5, image.indexOf(';'));
+      const ext = (mime.split('/')[1] || 'png').split('+')[0];
+      filename = `image_${postId}.${ext}`;
+    } else {
+      const u = new URL(image, 'http://localhost');
+      filename = path.basename(u.pathname) || `image_${postId}`;
+    }
+  } catch (_) {
+    filename = `attachment_${postId}`;
+  }
+
+  return `
+    <div class="file-container">
+      <div class="file-meta">File: <a href="${escapeHtml(image)}" target="_blank" rel="noopener noreferrer" class="file-link">${escapeHtml(filename)}</a></div>
+      <a href="${escapeHtml(image)}" target="_blank" rel="noopener noreferrer" class="file-thumb-link">
+        <img src="${escapeHtml(displaySrc)}" alt="File No.${postId}" class="post-thumb" loading="lazy">
+      </a>
+    </div>
+  `;
 }
 
 function escapeHtml(str) {
@@ -326,6 +448,17 @@ textarea.form-input { min-height: 85px; resize: vertical; font-family: inherit; 
 
 .sage-label { font-size: 12px; color: var(--text-secondary); margin-left: 12px; display: inline-flex; align-items: center; gap: 5px; }
 
+/* File Attachment Styling */
+.file-container { margin-bottom: 6px; }
+.file-meta { font-size: 11px; color: var(--text-muted); margin-bottom: 4px; font-family: monospace; }
+.file-link { color: var(--link-color); text-decoration: underline; }
+.file-thumb-link { display: block; float: left; margin: 2px 14px 8px 0; }
+.post-thumb { max-width: 200px; max-height: 200px; border-radius: 4px; border: 1px solid var(--border-subtle); object-fit: cover; background: var(--bg-secondary); transition: border-color 0.15s ease, box-shadow 0.15s ease; }
+.post-thumb:hover { border-color: var(--border-active); box-shadow: 0 0 10px rgba(56, 189, 248, 0.3); }
+.post-body::after { content: ""; display: table; clear: both; }
+.catalog-thumb-wrapper { text-align: center; margin-bottom: 8px; }
+.catalog-thumb { max-width: 100%; max-height: 120px; border-radius: 4px; object-fit: cover; }
+
 /* Threads and Posts */
 .thread {
   max-width: 1020px;
@@ -435,6 +568,17 @@ textarea.form-input { min-height: 85px; resize: vertical; font-family: inherit; 
 `;
 
 const JS_SCRIPT = `
+function handleFileSelect(e) {
+  const file = e.target.files && e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = function(evt) {
+    const imgInput = document.getElementById('image-input');
+    if (imgInput) imgInput.value = evt.target.result;
+  };
+  reader.readAsDataURL(file);
+}
+
 function insertQuote(postId) {
   const commentEl = document.getElementById('comment-input');
   if (!commentEl) return;
@@ -536,6 +680,7 @@ function renderBoardHtml(threads, activeCategory = null) {
     const catBadge = `<span class="category-tag">${threadCat.code} ${escapeHtml(threadCat.slug)}</span>`;
     const opBadge = renderSeatBadge(op.seat);
     const opComment = formatComment(op.note, t.id);
+    const opAttachment = renderAttachmentHtml(op.image, op.thumb, op.id);
     const subjectText = escapeHtml(t.subject || `Thread #${t.id}`);
 
     const replies = posts.slice(1);
@@ -550,6 +695,7 @@ function renderBoardHtml(threads, activeCategory = null) {
     const repliesHtml = shownReplies.map(rep => {
       const repBadge = renderSeatBadge(rep.seat);
       const repComment = formatComment(rep.note, t.id);
+      const repAttachment = renderAttachmentHtml(rep.image, rep.thumb, rep.id);
       const sageTag = rep.sage ? ' <span style="color:var(--sage-color);font-size:11px;font-weight:700;">[SAGE]</span>' : '';
 
       return `
@@ -563,7 +709,7 @@ function renderBoardHtml(threads, activeCategory = null) {
             </span>
             ${sageTag}
           </div>
-          <div class="post-body">${repComment}</div>
+          <div class="post-body">${repAttachment}<div class="post-text">${repComment}</div></div>
         </div>
       `;
     }).join('\n');
@@ -584,7 +730,7 @@ function renderBoardHtml(threads, activeCategory = null) {
               [<a href="/thread/${t.id}">Reply</a>]
             </span>
           </div>
-          <div class="post-body">${opComment}</div>
+          <div class="post-body">${opAttachment}<div class="post-text">${opComment}</div></div>
         </div>
         <div class="replies-container">
           ${omittedHtml}
@@ -631,8 +777,24 @@ function renderBoardHtml(threads, activeCategory = null) {
         </select>
       </div>
       <div class="form-row">
+        <span class="form-label">Image:</span>
+        <div style="flex:1; display:flex; gap:6px;">
+          <input type="text" name="image" id="image-input" class="form-input" placeholder="Image URL (https://...) or base64 (data:image/...)">
+          <input type="file" id="file-picker" accept="image/*" style="display:none;" onchange="handleFileSelect(event)">
+          <button type="button" class="seat-pill" style="padding:4px 8px;" onclick="document.getElementById('file-picker').click()">[ Browse ]</button>
+        </div>
+      </div>
+      <div class="form-row">
         <span class="form-label">Subject:</span>
         <input type="text" name="subject" class="form-input" placeholder="Topic headline (required for new threads)">
+      </div>
+      <div class="form-row">
+        <span class="form-label">Image:</span>
+        <div style="flex:1; display:flex; gap:6px;">
+          <input type="text" name="image" id="image-input-thread" class="form-input" placeholder="Image URL (https://...) or base64 (data:image/...)">
+          <input type="file" id="file-picker-thread" accept="image/*" style="display:none;" onchange="const f=this.files&&this.files[0];if(f){const r=new FileReader();r.onload=e=>{document.getElementById('image-input-thread').value=e.target.result;};r.readAsDataURL(f);}">
+          <button type="button" class="seat-pill" style="padding:4px 8px;" onclick="document.getElementById('file-picker-thread').click()">[ Browse ]</button>
+        </div>
       </div>
       <div class="form-row">
         <span class="form-label">Comment:</span>
@@ -667,6 +829,7 @@ function renderThreadHtml(thread, allThreadsCount) {
   const op = thread.posts ? thread.posts[0] : null;
   const opBadge = op ? renderSeatBadge(op.seat) : '';
   const opComment = op ? formatComment(op.note, thread.id) : '';
+  const opAttachment = op ? renderAttachmentHtml(op.image, op.thumb, op.id) : '';
   const subjectText = escapeHtml(thread.subject || `Thread #${thread.id}`);
   const replies = (thread.posts || []).slice(1);
   const bumpStatus = (thread.posts || []).length >= BUMP_LIMIT ? ' <span style="color:var(--sage-color);font-weight:700;">(Bump Limit Reached)</span>' : '';
@@ -674,6 +837,7 @@ function renderThreadHtml(thread, allThreadsCount) {
   const repliesHtml = replies.map(rep => {
     const repBadge = renderSeatBadge(rep.seat);
     const repComment = formatComment(rep.note, thread.id);
+    const repAttachment = renderAttachmentHtml(rep.image, rep.thumb, rep.id);
     const sageTag = rep.sage ? ' <span style="color:var(--sage-color);font-size:11px;font-weight:700;">[SAGE]</span>' : '';
 
     return `
@@ -687,7 +851,7 @@ function renderThreadHtml(thread, allThreadsCount) {
           </span>
           ${sageTag}
         </div>
-        <div class="post-body">${repComment}</div>
+        <div class="post-body">${repAttachment}<div class="post-text">${repComment}</div></div>
       </div>
     `;
   }).join('\n');
@@ -721,6 +885,14 @@ function renderThreadHtml(thread, allThreadsCount) {
         <span class="seat-pill" onclick="selectSeat('Operator')">Operator</span>
       </div>
       <div class="form-row">
+        <span class="form-label">Image:</span>
+        <div style="flex:1; display:flex; gap:6px;">
+          <input type="text" name="image" id="image-input-thread" class="form-input" placeholder="Image URL (https://...) or base64 (data:image/...)">
+          <input type="file" id="file-picker-thread" accept="image/*" style="display:none;" onchange="const f=this.files&&this.files[0];if(f){const r=new FileReader();r.onload=e=>{document.getElementById('image-input-thread').value=e.target.result;};r.readAsDataURL(f);}">
+          <button type="button" class="seat-pill" style="padding:4px 8px;" onclick="document.getElementById('file-picker-thread').click()">[ Browse ]</button>
+        </div>
+      </div>
+      <div class="form-row">
         <span class="form-label">Comment:</span>
         <textarea name="note" id="comment-input" class="form-input" placeholder="Greentext (> ...), quotes (>>${op ? op.id : 0}), technical rebuttals, benchmarks..."></textarea>
       </div>
@@ -745,7 +917,7 @@ function renderThreadHtml(thread, allThreadsCount) {
         </span>
         ${bumpStatus}
       </div>
-      <div class="post-body">${opComment}</div>
+      <div class="post-body">${opAttachment}<div class="post-text">${opComment}</div></div>
     </div>
     <div class="replies-container">
       ${repliesHtml}
@@ -775,11 +947,13 @@ function renderCatalogHtml(threads, activeCategory = null) {
     const repliesCount = Math.max(0, (t.posts || []).length - 1);
     const bumpTime = (t.last_bump || '').split('T').pop().replace('Z', '');
 
+    const thumbImg = op && op.image ? `<div class="catalog-thumb-wrapper"><img src="${escapeHtml(op.thumb || op.image)}" class="catalog-thumb" loading="lazy" alt="Thumb"></div>` : '';
     return `
       <a href="/thread/${t.id}" class="catalog-card">
         <div class="catalog-card-header">
           ${(getCategoryInfo(t.category)).code} &bull; No.${t.id} &bull; ${seat}
         </div>
+        ${thumbImg}
         <div class="catalog-card-subject">${subject}</div>
         <div class="catalog-card-excerpt">${excerpt}</div>
         <div class="catalog-card-footer">
@@ -1187,6 +1361,9 @@ function renderGateHtml(errorMsg = '') {
 // ----------------------------------------------------------------------------
 module.exports = function handler(req, res) {
   const threads = loadState();
+  if (pruneThreads(threads) > 0) {
+    saveState();
+  }
   const parsedUrl = new URL(req.url, 'http://localhost');
   const cleanPath = (parsedUrl.pathname || '/').replace(/\/+$/, '') || '/';
   const query = Object.fromEntries(parsedUrl.searchParams.entries());
@@ -1360,6 +1537,8 @@ module.exports = function handler(req, res) {
       const seat = String(payload.seat || 'Anonymous').trim() || 'Anonymous';
       const note = String(payload.note || payload.comment || '').trim();
       let subject = String(payload.subject || '').trim();
+      const image = String(payload.image || payload.image_url || payload.attachment || '').trim();
+      const thumb = String(payload.thumb || '').trim();
       const rawTid = payload.thread_id;
       const targetThreadId = rawTid && String(rawTid).trim() !== '0' ? parseInt(rawTid, 10) : null;
       const sage = payload.sage === '1' || payload.sage === 'true' || payload.sage === true;
@@ -1367,6 +1546,10 @@ module.exports = function handler(req, res) {
 
       if (!note) {
         return sendJson(400, { error: 'Missing comment/note field' });
+      }
+
+      if (note.length > MAX_COMMENT_LENGTH) {
+        return sendJson(400, { error: 'Comment exceeds maximum allowed length of ' + MAX_COMMENT_LENGTH + ' characters' });
       }
 
       // Security check
@@ -1400,6 +1583,8 @@ module.exports = function handler(req, res) {
           seat: seat,
           subject: '',
           note: note,
+          image: image,
+          thumb: thumb,
           sage: sage,
         };
         thread.posts.push(postRecord);
@@ -1448,6 +1633,8 @@ module.exports = function handler(req, res) {
               seat: seat,
               subject: subject,
               note: note,
+              image: image,
+              thumb: thumb,
               sage: false,
             }
           ]
