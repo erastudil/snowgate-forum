@@ -198,9 +198,26 @@ server.listen(0, '127.0.0.1', () => {
                                                         assert.ok(catHtml.includes('Snowgate Boards Directory'));
                                                         console.log('✓ Test 14: GET /categories (HTML) routes cleanly to Boards Index');
 
-                                                        console.log('\n[PASS] All 14 Snowgate Forum & Boards Index tests passed with exit code 0!');
-                                                        server.close();
-                                                        process.exit(0);
+                                                        // Test 15: Thread view uses the thread's board, not a hardcoded /tech/
+                                                        http.get(baseUrl + '/thread/71997', { headers: authHeaders }, resThread => {
+                                                          assert.strictEqual(resThread.statusCode, 200);
+                                                          let threadHtml = '';
+                                                          resThread.on('data', chunk => (threadHtml += chunk));
+                                                          resThread.on('end', () => {
+                                                            assert.ok(threadHtml.includes('<span class="board-code">/pcg/</span>'), 'pc-games thread must show /pcg/');
+                                                            assert.ok(threadHtml.includes('Channel: PC Games'), 'header channel must be the thread board');
+                                                            assert.ok(threadHtml.includes('<title>/pcg/ - Shader Compilation Stutter - Snowgate Forum</title>'));
+                                                            assert.ok(threadHtml.includes('href="/?category=pc-games"'), 'return link must go back to the thread board');
+                                                            const topicCount = threadHtml.match(/Active Topics: (\d+)\/15/);
+                                                            assert.ok(topicCount, 'thread header must show the board topic cap');
+                                                            assert.ok(Number(topicCount[1]) <= 15, 'topic count is per board, not the whole forum');
+                                                            console.log('✓ Test 15: Thread view follows the thread board instead of /tech/');
+
+                                                            console.log('\n[PASS] All 15 Snowgate Forum & Boards Index tests passed with exit code 0!');
+                                                            server.close();
+                                                            process.exit(0);
+                                                          });
+                                                        });
                                                       });
                                                     });
                                                   });

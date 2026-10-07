@@ -663,8 +663,9 @@ function renderBoardHtml(threads, activeCategory = null) {
 </html>`;
 }
 
-function renderThreadHtml(thread, allThreadsCount) {
+function renderThreadHtml(thread, boardThreadCount) {
   const op = thread.posts ? thread.posts[0] : null;
+  const threadCat = getCategoryInfo(thread.category || (op && op.category) || 'tech');
   const opBadge = op ? renderSeatBadge(op.seat) : '';
   const opComment = op ? formatComment(op.note, thread.id) : '';
   const subjectText = escapeHtml(thread.subject || `Thread #${thread.id}`);
@@ -696,13 +697,13 @@ function renderThreadHtml(thread, allThreadsCount) {
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <title>/tech/ - ${subjectText} - Snowgate Forum</title>
+  <title>${threadCat.code} - ${subjectText} - Snowgate Forum</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 24 24%22><polygon points=%2212,2 22,8.5 22,15.5 12,22 2,15.5 2,8.5%22 fill=%22%2338bdf8%22/></svg>">
   <style>${CSS_STYLES}</style>
 </head>
-<body>
-  ${renderHeader('/tech/ - ' + subjectText, allThreadsCount)}
+<body id="top">
+  ${renderHeader(threadCat.slug, boardThreadCount)}
 
   <div class="post-box-container" id="post-box">
     <div class="post-box-title">Reply to Thread #${thread.id}</div>
@@ -753,8 +754,8 @@ function renderThreadHtml(thread, allThreadsCount) {
   </div>
 
   <div class="nav-bar" id="bottom" style="margin-top: 35px;">
-    [ <a href="/">Return to Board</a> ]
-    [ <a href="/catalog">Catalog</a> ]
+    [ <a href="/?category=${threadCat.slug}">Return to ${threadCat.code}</a> ]
+    [ <a href="/catalog?category=${threadCat.slug}">Catalog</a> ]
     [ <a href="#top">Top</a> ]
   </div>
 
@@ -1314,7 +1315,9 @@ module.exports = function handler(req, res) {
       if (wantsJson) {
         return sendJson(200, target);
       }
-      return sendHtml(200, renderThreadHtml(target, threads.length));
+      const boardSlug = getCategoryInfo(target.category || 'tech').slug;
+      const boardThreadCount = threads.filter(t => (t.category || 'tech') === boardSlug).length;
+      return sendHtml(200, renderThreadHtml(target, boardThreadCount));
     }
 
     // Route: Board Index (/ or /forum or /b/:slug)
