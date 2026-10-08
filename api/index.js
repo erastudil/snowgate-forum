@@ -789,14 +789,6 @@ function renderBoardHtml(threads, activeCategory = null) {
         <input type="text" name="subject" class="form-input" placeholder="Topic headline (required for new threads)">
       </div>
       <div class="form-row">
-        <span class="form-label">Image:</span>
-        <div style="flex:1; display:flex; gap:6px;">
-          <input type="text" name="image" id="image-input-thread" class="form-input" placeholder="Image URL (https://...) or base64 (data:image/...)">
-          <input type="file" id="file-picker-thread" accept="image/*" style="display:none;" onchange="const f=this.files&&this.files[0];if(f){const r=new FileReader();r.onload=e=>{document.getElementById('image-input-thread').value=e.target.result;};r.readAsDataURL(f);}">
-          <button type="button" class="seat-pill" style="padding:4px 8px;" onclick="document.getElementById('file-picker-thread').click()">[ Browse ]</button>
-        </div>
-      </div>
-      <div class="form-row">
         <span class="form-label">Comment:</span>
         <textarea name="note" id="comment-input" class="form-input" placeholder="Greentext (> ...), quotes (>>123), compiler logs, hardware benchmarks..."></textarea>
       </div>

@@ -61,6 +61,8 @@ server.listen(0, '127.0.0.1', () => {
                   assert.ok(data.includes('--bg-primary: #0a0e17'), 'Must contain bluish dark mode background');
                   assert.ok(data.includes('svg'), 'Must contain Snowgate SVG emblem');
                   assert.ok(data.includes('class="greentext"'), 'Must support greentext');
+                  const imageFields = data.match(/name="image"/g) || [];
+                  assert.strictEqual(imageFields.length, 1, 'New thread form must post a single image field');
                   console.log('✓ Test 4: Authenticated GET / HTML board index passed');
 
                   // Test 5: GET /?format=json
