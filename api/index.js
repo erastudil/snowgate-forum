@@ -67,6 +67,10 @@ const SEED_DATA_FILE = path.join(__dirname, '..', 'data', 'forum_seed.json');
 
 let inMemoryThreads = null;
 let nextPostId = 1;
+let githubMode = false;
+let stateDirty = false;
+let remoteSha = null;
+let durableQueue = Promise.resolve();
 
 
 function isHumanSeat(seat) {
@@ -166,12 +170,133 @@ function loadState() {
 
 function saveState() {
   if (!inMemoryThreads) return;
+  if (githubMode) {
+    stateDirty = true;
+    return;
+  }
   try {
     fs.writeFileSync(TMP_DATA_FILE, JSON.stringify(inMemoryThreads, null, 2), 'utf-8');
   } catch (_) {}
   try {
     fs.writeFileSync(SEED_DATA_FILE, JSON.stringify(inMemoryThreads, null, 2), 'utf-8');
   } catch (_) {}
+}
+
+function readSeedThreads() {
+  if (!fs.existsSync(SEED_DATA_FILE)) return [];
+  try {
+    const parsed = JSON.parse(fs.readFileSync(SEED_DATA_FILE, 'utf-8'));
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (_) {
+    return [];
+  }
+}
+
+function recomputeNextPostId() {
+  let maxId = 0;
+  for (const t of inMemoryThreads) {
+    if (t.id > maxId) maxId = t.id;
+    if (t.posts) {
+      for (const p of t.posts) {
+        if (p.id > maxId) maxId = p.id;
+      }
+    }
+  }
+  nextPostId = maxId + 1;
+}
+
+function adoptExternalState(threads, sha) {
+  inMemoryThreads = Array.isArray(threads) ? threads : [];
+  remoteSha = sha || null;
+  stateDirty = false;
+  githubMode = true;
+  recomputeNextPostId();
+}
+
+function collectPostNotes(threads) {
+  const notes = new Map();
+  for (const thread of threads) {
+    for (const post of thread.posts || []) notes.set(post.id, post.note);
+  }
+  return notes;
+}
+
+function maxPostId(threads) {
+  let maxId = 0;
+  for (const thread of threads) {
+    if (thread.id > maxId) maxId = thread.id;
+    for (const post of thread.posts || []) {
+      if (post.id > maxId) maxId = post.id;
+    }
+  }
+  return maxId;
+}
+
+function mergeDurable(remote, local) {
+  const remoteNotes = collectPostNotes(remote);
+  let ceiling = Math.max(maxPostId(remote), maxPostId(local));
+  const localCopy = JSON.parse(JSON.stringify(local));
+  for (const thread of localCopy) {
+    for (const post of thread.posts || []) {
+      if (!remoteNotes.has(post.id) || remoteNotes.get(post.id) === post.note) continue;
+      ceiling += 1;
+      const previous = post.id;
+      post.id = ceiling;
+      if (thread.id === previous) {
+        thread.id = ceiling;
+        for (const sibling of thread.posts) {
+          if (sibling.thread_id === previous) sibling.thread_id = ceiling;
+        }
+      } else if (post.thread_id === previous) {
+        post.thread_id = thread.id;
+      }
+    }
+  }
+  return mergeThreadsData(JSON.parse(JSON.stringify(remote)), localCopy);
+}
+
+function enqueueDurable(task) {
+  const run = durableQueue.then(task, task);
+  durableQueue = run.then(() => undefined, () => undefined);
+  return run;
+}
+
+function armDurableResponse(res, shaHolder) {
+  const origWriteHead = res.writeHead.bind(res);
+  const origEnd = res.end.bind(res);
+  let statusCode = 200;
+  let headers = null;
+  let finished = false;
+  res.writeHead = (code, nextHeaders) => {
+    statusCode = code;
+    headers = nextHeaders || null;
+    return res;
+  };
+  res.end = (payload) => {
+    if (finished) return res;
+    finished = true;
+    const flush = (code, hdrs, body) => {
+      if (hdrs) origWriteHead(code, hdrs);
+      else origWriteHead(code);
+      origEnd(body);
+      shaHolder.done();
+    };
+    if (!stateDirty) {
+      flush(statusCode, headers, payload);
+      return res;
+    }
+    const durable = require('./durable');
+    durable.persist(inMemoryThreads, remoteSha, mergeDurable).then((saved) => {
+      remoteSha = saved.sha;
+      stateDirty = false;
+      inMemoryThreads = saved.threads;
+      flush(statusCode, headers, payload);
+    }).catch(() => {
+      const body = JSON.stringify({ error: 'forum state persist failed' });
+      flush(503, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' }, body);
+    });
+    return res;
+  };
 }
 
 function pruneThreads(threads, targetCategory = null) {
@@ -184,6 +309,8 @@ function pruneThreads(threads, targetCategory = null) {
     if (targetCategory && normalizeCategory(t.category || 'tech') !== normalizeCategory(targetCategory)) {
       continue;
     }
+    if (hasHumanPosts(t)) continue;
+
     const bumpTime = t.last_bump || t.created_at || (t.posts && t.posts[0] && t.posts[0].time);
     if (bumpTime) {
       const parsedTime = Date.parse(bumpTime);
@@ -1359,7 +1486,7 @@ function renderGateHtml(errorMsg = '') {
 // ----------------------------------------------------------------------------
 // Main Request Handler
 // ----------------------------------------------------------------------------
-module.exports = function handler(req, res) {
+function handleRequest(req, res) {
   const threads = loadState();
   if (pruneThreads(threads) > 0) {
     saveState();
@@ -1656,4 +1783,31 @@ module.exports = function handler(req, res) {
 
   res.writeHead(405, { 'Content-Type': 'text/plain' });
   res.end('Method Not Allowed');
+}
+
+module.exports = function handler(req, res) {
+  if (!process.env.FORUM_GITHUB_TOKEN) return handleRequest(req, res);
+  enqueueDurable(async () => {
+    const durable = require('./durable');
+    let loaded;
+    try {
+      loaded = await durable.hydrate(readSeedThreads());
+    } catch (_) {
+      res.writeHead(503, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
+      res.end(JSON.stringify({ error: 'forum state unavailable' }));
+      return;
+    }
+    adoptExternalState(loaded.threads, loaded.sha);
+    await new Promise((resolve) => {
+      armDurableResponse(res, { done: resolve });
+      try {
+        handleRequest(req, res);
+      } catch (_) {
+        if (!res.writableEnded) {
+          res.writeHead(500, { 'Content-Type': 'text/plain' });
+          res.end('forum handler failed');
+        }
+      }
+    });
+  });
 };

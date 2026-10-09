@@ -1,0 +1,7 @@
+transformers>=4.56.0
+peft>=0.17.0
+accelerate>=1.10.0
+safetensors
+sentencepiece
+ddgs
+requests
