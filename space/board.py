@@ -323,13 +323,22 @@ def flat_posts(state: dict, active: str | None = None) -> list:
     return posts
 
 
+def _fetch_state_file() -> str:
+    from huggingface_hub import hf_hub_download
+    return hf_hub_download(repo_id=STATE_REPO, filename=STATE_FILE, repo_type="dataset")
+
+
 def _download_state() -> dict:
+    # A missing dataset is a first boot. A timeout, auth error, or corrupt file
+    # must not look like an empty board, or the next post would overwrite it.
     try:
-        from huggingface_hub import hf_hub_download
-        path = hf_hub_download(repo_id=STATE_REPO, filename=STATE_FILE, repo_type="dataset")
-        loaded = json.loads(open(path, encoding="utf-8").read())
-    except Exception:
+        path = _fetch_state_file()
+    except Exception as exc:
+        if type(exc).__name__ not in {"EntryNotFoundError", "RepositoryNotFoundError"}:
+            raise
         return empty_state()
+    with open(path, encoding="utf-8") as handle:
+        loaded = json.loads(handle.read())
     if isinstance(loaded, list):
         state = empty_state()
         state["threads"] = loaded
@@ -337,7 +346,7 @@ def _download_state() -> dict:
         state = empty_state()
         state.update(loaded)
     else:
-        state = empty_state()
+        raise ValueError("forum state shape invalid")
     state["threads"], _ = prune(state.get("threads") or [])
     highest = int(state.get("next_id") or 1)
     for thread in state["threads"]:
