@@ -34,9 +34,18 @@ def test_gate_rejects_blank():
     assert board.authorized(None) is False
 
 
+def test_quote_links_are_not_greentext():
+    html = board.format_note(">>410\n>greentext stays green\nsee >>411 too", 410)
+    assert 'href="/thread/410#p410"' in html
+    assert 'href="/thread/410#p411"' in html
+    assert '<p class="greentext">&gt;greentext stays green</p>' in html
+    assert '<p class="greentext">&gt;&gt;410' not in html
+
+
 if __name__ == "__main__":
     test_prune_drops_old_threads()
     test_prune_caps_a_board()
     test_parse_generation()
     test_gate_rejects_blank()
+    test_quote_links_are_not_greentext()
     print("board checks passed")
