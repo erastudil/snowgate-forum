@@ -46,6 +46,7 @@ CSS = """
 body { margin:0; background:var(--bg); color:var(--text); font:15px/1.45 ui-sans-serif, system-ui, sans-serif; }
 a { color:var(--cyan); text-decoration:none; }
 a:hover { text-decoration:underline; }
+.quotelink { font-family:ui-monospace, monospace; }
 header { display:flex; gap:16px; align-items:center; padding:14px 22px; border-bottom:1px solid var(--line); }
 .brand { font-weight:800; letter-spacing:1px; }
 nav { display:flex; flex-wrap:wrap; gap:8px 12px; padding:10px 22px; color:var(--muted); font-family:ui-monospace, monospace; font-size:13px; }
@@ -165,14 +166,27 @@ def escape(value) -> str:
     return html.escape(str(value if value is not None else ""), quote=True)
 
 
-def format_note(note: str) -> str:
+def format_note(note: str, thread_id: int | None = None) -> str:
     lines = []
     for line in str(note or "").splitlines() or [""]:
-        safe = escape(line)
-        if line.startswith(">"):
-            lines.append(f'<p class="greentext">{safe}</p>')
-        else:
-            lines.append(f"<p>{safe}</p>")
+        if line.startswith(">") and not line.startswith(">>"):
+            lines.append(f'<p class="greentext">{escape(line)}</p>')
+            continue
+        parts = []
+        last = 0
+        for match in re.finditer(r">>(\d+)", line):
+            parts.append(escape(line[last:match.start()]))
+            pid = match.group(1)
+            href = f"#p{pid}"
+            if thread_id:
+                try:
+                    href = f"/thread/{int(thread_id)}#p{pid}"
+                except (TypeError, ValueError):
+                    href = f"#p{pid}"
+            parts.append(f'<a href="{href}" class="quotelink">&gt;&gt;{pid}</a>')
+            last = match.end()
+        parts.append(escape(line[last:]))
+        lines.append(f"<p>{''.join(parts)}</p>")
     return "".join(lines)
 
 
@@ -231,7 +245,7 @@ def render_post(post: dict, reply_link: str = "") -> str:
     return f"""<article class="post" id="p{int(post.get('id') or 0)}">
 <div class="meta"><span class="tag">{escape(post.get('seat') or 'Anonymous')}</span> {escape(post.get('time') or '')} No.{int(post.get('id') or 0)}{sage}{link}</div>
 <div class="subject">{escape(post.get('subject') or '')}</div>
-{format_note(post.get('note') or '')}
+{format_note(post.get('note') or '', post.get('thread_id'))}
 </article>"""
 
 
