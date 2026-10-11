@@ -35,6 +35,8 @@ CATEGORIES = [
 GATE_HASHES = (
     "31f1bb61dcc8ed65cbd9662093424b798f050ab90fa59d658c3d846ac306b680",
     "6b35a66e5997283a0b6468d695487571fa464f9d2b8d6d745da091f9172cc5f2",
+    "68234dc667f4656edd997679db115a6eb601ffecd98bf427f78b6cf95874d37c",
+    "3bd6b32495ae51647405299e24a8d337d60f3e025c2bb65e8547e1b0908a07b7",
 )
 
 LOCK = threading.RLock()
@@ -138,17 +140,40 @@ def _eq(left: str, right: str) -> bool:
 def authorized(candidate: str | None) -> bool:
     if not candidate:
         return False
-    trimmed = candidate.strip()
-    direct = hashlib.sha256(trimmed.encode("utf-8")).hexdigest()
+    trimmed = str(candidate).strip()
+    if not trimmed:
+        return False
+
+    token_candidate = trimmed.strip('\'"').lower()
     allowed = _hashes()
-    if any(_eq(direct, item) for item in allowed):
+    if any(_eq(token_candidate, item) for item in allowed):
         return True
-    if any(_eq(trimmed.lower(), item) for item in allowed):
-        return True
-    normalized = re.sub(r"[\u201c\u201d\u201e\u201f\u2033\u2036]", '"', trimmed)
-    if normalized != trimmed:
-        digest = hashlib.sha256(normalized.encode("utf-8")).hexdigest()
-        if any(_eq(digest, item) for item in allowed):
+
+    unquoted = re.sub(r"^[\"'“”„‟″‶‘’]+|[\"'“”„‟″‶‘’]+$", "", trimmed).strip()
+    unquoted_no_dot = unquoted.rstrip(".").strip()
+
+    variations = [
+        trimmed,
+        trimmed.lower(),
+        unquoted,
+        unquoted.lower(),
+        unquoted_no_dot,
+        unquoted_no_dot.lower(),
+        unquoted_no_dot + ".",
+        unquoted_no_dot.lower() + ".",
+        f'"{unquoted_no_dot}."',
+        f'"{unquoted_no_dot.lower()}."',
+        f'"{unquoted_no_dot}"',
+        f'"{unquoted_no_dot.lower()}"',
+        f"'{unquoted_no_dot}.'",
+        f"'{unquoted_no_dot.lower()}.'",
+    ]
+
+    for v in variations:
+        if not v:
+            continue
+        h = hashlib.sha256(v.encode("utf-8")).hexdigest()
+        if any(_eq(h, item) for item in allowed):
             return True
     return False
 
@@ -156,8 +181,8 @@ def authorized(candidate: str | None) -> bool:
 def cookie_value(header: str | None) -> str:
     for part in (header or "").split(";"):
         name, _, value = part.strip().partition("=")
-        if name == "snowgate_gate":
-            return value
+        if name.strip() == "snowgate_gate":
+            return value.strip().strip('\'"')
     return ""
 
 

@@ -6,7 +6,16 @@ import os
 import threading
 import xml.etree.ElementTree as ET
 
-import spaces
+try:
+    import spaces
+except ImportError:
+    class _MockSpaces:
+        @staticmethod
+        def GPU(*args, **kwargs):
+            def decorator(fn):
+                return fn
+            return decorator
+    spaces = _MockSpaces()
 
 import board
 
@@ -125,8 +134,63 @@ def re_strip(value: str) -> str:
     return re.sub(r"<[^>]+>", " ", value).replace("\n", " ").strip()
 
 
+def _google_news(query: str) -> list[dict]:
+    import urllib.parse
+    import urllib.request
+    url = f"https://news.google.com/rss/search?q={urllib.parse.quote_plus(query)}&hl=en-US&gl=US&ceid=US:en"
+    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"})
+    with urllib.request.urlopen(req, timeout=10) as res:
+        root = ET.fromstring(res.read())
+    found = []
+    for item in root.iter("item"):
+        title = (item.findtext("title") or "").strip()
+        summary = (item.findtext("description") or "").strip()
+        summary = re_strip(summary)[:240]
+        if title:
+            found.append({"title": title, "body": summary})
+        if len(found) >= 4:
+            break
+    return found
+
+
+def _algolia_hn(query: str) -> list[dict]:
+    import json
+    import urllib.parse
+    import urllib.request
+    url = f"https://hn.algolia.com/api/v1/search?query={urllib.parse.quote_plus(query)}&tags=story"
+    req = urllib.request.Request(url, headers={"User-Agent": "snowgate-forum/1.0"})
+    with urllib.request.urlopen(req, timeout=10) as res:
+        data = json.loads(res.read().decode("utf-8"))
+    found = []
+    for hit in data.get("hits", []):
+        title = (hit.get("title") or "").strip()
+        story_text = (hit.get("story_text") or hit.get("url") or "").strip()
+        if title:
+            found.append({"title": title, "body": story_text[:240]})
+        if len(found) >= 4:
+            break
+    return found
+
+
 def search_notes(slug: str, angle: str) -> list[dict]:
     query = f"{angle} news"
+    # 1. Google News RSS search (always current, zero-auth)
+    try:
+        results = _google_news(query)
+        if results:
+            return results
+    except Exception:
+        pass
+
+    # 2. Algolia Hacker News search
+    try:
+        results = _algolia_hn(angle)
+        if results:
+            return results
+    except Exception:
+        pass
+
+    # 3. DuckDuckGo search if available
     try:
         from ddgs import DDGS
         with DDGS() as client:
@@ -141,6 +205,8 @@ def search_notes(slug: str, angle: str) -> list[dict]:
             return cleaned
     except Exception:
         pass
+
+    # 4. Fallback RSS feeds
     try:
         return _rss(FEEDS[slug])
     except Exception:
@@ -176,13 +242,13 @@ def _target_thread(state: dict, slug: str):
     return None
 
 
-def run_cycle() -> str:
+def run_cycle(force: bool = False) -> str:
     if not _CYCLE.acquire(blocking=False):
         return "busy"
     try:
         _READY.wait(timeout=180)
         state = board.load_state()
-        if not board.due(state, CYCLE_SECONDS):
+        if not force and not board.due(state, CYCLE_SECONDS):
             return "fresh"
         index = int(state.get("cycle_index") or 0)
         info = board.CATEGORIES[index % len(board.CATEGORIES)]
@@ -250,8 +316,8 @@ def loop() -> None:
         time.sleep(CYCLE_SECONDS)
 
 
-def kick() -> None:
-    threading.Thread(target=run_cycle, daemon=True).start()
+def kick(force: bool = False) -> None:
+    threading.Thread(target=lambda: run_cycle(force=force), daemon=True).start()
 
 
 def start() -> None:

@@ -1,6 +1,9 @@
 """Snowgate forum routes plus the ZeroGPU news desk."""
 
-import spaces
+try:
+    import spaces
+except ImportError:
+    pass
 
 import agents
 import board
@@ -100,14 +103,21 @@ def by_board(slug: str, request: Request):
 
 @app.post("/gate")
 async def gate(request: Request):
-    form = await request.form()
-    if board.authorized(str(form.get("password") or "")):
+    content_type = request.headers.get("content-type") or ""
+    if "application/json" in content_type:
+        payload = await request.json()
+    else:
+        payload = dict(await request.form())
+    password = str(payload.get("password") or "").strip()
+    if board.authorized(password):
         response = RedirectResponse("/", status_code=303)
-        response.set_cookie("snowgate_gate", board.GATE_HASHES[0], max_age=2592000, httponly=True, samesite="lax", secure=True, path="/")
+        is_https = request.url.scheme == "https" or request.headers.get("x-forwarded-proto") == "https"
+        response.set_cookie("snowgate_gate", board.GATE_HASHES[0], max_age=2592000, httponly=True, samesite="lax", secure=is_https, path="/")
         return response
     return HTMLResponse(board.gate_page("incorrect password. try again."), status_code=401)
 
 
+@app.post("/")
 @app.post("/post")
 async def post(request: Request):
     if not _allowed(request):
@@ -137,7 +147,7 @@ async def post(request: Request):
 def tick(request: Request):
     if not _allowed(request):
         return _deny(request)
-    agents.kick()
+    agents.kick(force=True)
     return RedirectResponse("/", status_code=303)
 
 

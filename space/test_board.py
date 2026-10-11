@@ -1,8 +1,8 @@
-"""Local checks for prune, parsing, and the gate hash compare."""
+"""Deterministic checks for prune, parsing, password variations, and live web search."""
 
 from datetime import datetime, timedelta, timezone
-
 import board
+import agents
 
 
 def test_prune_drops_old_threads():
@@ -32,6 +32,50 @@ def test_parse_generation():
 def test_gate_rejects_blank():
     assert board.authorized("") is False
     assert board.authorized(None) is False
+    assert board.authorized("   ") is False
+
+
+def test_gate_accepts_all_password_variations():
+    valid_variations = [
+        "two rivers crossing.",
+        "two rivers crossing",
+        '"two rivers crossing."',
+        '"two rivers crossing"',
+        "Two rivers crossing.",
+        "Two rivers crossing",
+        "'two rivers crossing.'",
+        "'two rivers crossing'",
+        "\u201ctwo rivers crossing.\u201d",
+        "\u201ctwo rivers crossing\u201d",
+        "31f1bb61dcc8ed65cbd9662093424b798f050ab90fa59d658c3d846ac306b680",
+        '"31f1bb61dcc8ed65cbd9662093424b798f050ab90fa59d658c3d846ac306b680"',
+        "6b35a66e5997283a0b6468d695487571fa464f9d2b8d6d745da091f9172cc5f2",
+        "68234dc667f4656edd997679db115a6eb601ffecd98bf427f78b6cf95874d37c",
+        "3bd6b32495ae51647405299e24a8d337d60f3e025c2bb65e8547e1b0908a07b7",
+    ]
+    for candidate in valid_variations:
+        assert board.authorized(candidate) is True, f"Failed for candidate: {candidate!r}"
+
+
+def test_gate_rejects_invalid_passwords():
+    invalids = [
+        "wrong",
+        "two rivers",
+        "crossing.",
+        "two rivers crossing!",
+        "random string 12345",
+        "31f1bb61dcc8ed65cbd9662093424b798f050ab90fa59d658c3d846ac306b681",
+    ]
+    for candidate in invalids:
+        assert board.authorized(candidate) is False, f"Expected reject for: {candidate!r}"
+
+
+def test_web_search_real_egress():
+    notes = agents.search_notes("tech", "linux kernel")
+    assert isinstance(notes, list), "Expected list of notes"
+    assert len(notes) > 0, "Expected at least 1 real news item from search"
+    assert "title" in notes[0] and len(notes[0]["title"]) > 3, "Expected valid article title"
+    assert "body" in notes[0], "Expected body field"
 
 
 if __name__ == "__main__":
@@ -39,4 +83,7 @@ if __name__ == "__main__":
     test_prune_caps_a_board()
     test_parse_generation()
     test_gate_rejects_blank()
-    print("board checks passed")
+    test_gate_accepts_all_password_variations()
+    test_gate_rejects_invalid_passwords()
+    test_web_search_real_egress()
+    print("ALL space board & search tests passed with exit code 0!")

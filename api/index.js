@@ -1215,10 +1215,14 @@ function renderBoardsIndexHtml(threads) {
 
 // Cryptographic SHA-256 password verification (plain text never stored in source code)
 const ALLOWED_GATE_HASHES = [
-  // Primary canonical SHA-256 hash (exact phrase with punctuation and delimiters)
+  // Primary canonical SHA-256 hash (exact phrase with quotation marks and period)
   '31f1bb61dcc8ed65cbd9662093424b798f050ab90fa59d658c3d846ac306b680',
-  // Backward-compatible fallback SHA-256 hash
+  // Canonical phrase without quotes, with period
   '6b35a66e5997283a0b6468d695487571fa464f9d2b8d6d745da091f9172cc5f2',
+  // Canonical phrase without quotes, without period
+  '68234dc667f4656edd997679db115a6eb601ffecd98bf427f78b6cf95874d37c',
+  // Canonical phrase with quotes, without period
+  '3bd6b32495ae51647405299e24a8d337d60f3e025c2bb65e8547e1b0908a07b7',
 ];
 
 if (process.env.SNOWGATE_PASSWORD_HASH) {
@@ -1246,27 +1250,66 @@ function verifyPassword(candidate) {
   const trimmed = candidate.trim();
   if (!trimmed) return false;
 
-  // 1. Direct candidate hash
-  const directHash = crypto.createHash('sha256').update(trimmed, 'utf8').digest('hex');
+  // 1. Direct session token check (e.g. cookie holding 64-char hex hash)
+  const tokenCandidate = trimmed.replace(/^["'“”‘’]+|["'“”‘’]+$/g, '').toLowerCase();
   for (const expected of ALLOWED_GATE_HASHES) {
-    if (safeCompareHash(directHash, expected)) return true;
+    if (safeCompareHash(tokenCandidate, expected)) return true;
   }
 
-  // 2. Candidate token check (e.g. cookie holding the session token)
-  for (const expected of ALLOWED_GATE_HASHES) {
-    if (safeCompareHash(trimmed.toLowerCase(), expected)) return true;
-  }
+  // 2. Normalize smart/curly quotes and strip surrounding quotes
+  const unquoted = trimmed
+    .replace(/[“”„‟″‶]/g, '"')
+    .replace(/[‘’]/g, "'")
+    .replace(/^["'“”‘’]+|["'“”‘’]+$/g, '')
+    .trim();
+  const unquotedNoDot = unquoted.replace(/\.+$/, '').trim();
 
-  // 3. Normalize smart/curly quotes (U+201C, U+201D, U+201E, etc.) to straight ASCII quotes
-  const normalized = trimmed.replace(/[\u201C\u201D\u201E\u201F\u2033\u2036]/g, '"');
-  if (normalized !== trimmed) {
-    const normHash = crypto.createHash('sha256').update(normalized, 'utf8').digest('hex');
+  // 3. Test comprehensive phrase variations
+  const variations = [
+    trimmed,
+    trimmed.toLowerCase(),
+    unquoted,
+    unquoted.toLowerCase(),
+    unquotedNoDot,
+    unquotedNoDot.toLowerCase(),
+    unquotedNoDot + '.',
+    unquotedNoDot.toLowerCase() + '.',
+    '"' + unquotedNoDot + '."',
+    '"' + unquotedNoDot.toLowerCase() + '."',
+    '"' + unquotedNoDot + '"',
+    '"' + unquotedNoDot.toLowerCase() + '"',
+    "'" + unquotedNoDot + ".'",
+    "'" + unquotedNoDot.toLowerCase() + ".'",
+    "'" + unquotedNoDot + "'",
+    "'" + unquotedNoDot.toLowerCase() + "'",
+  ];
+
+  for (const v of variations) {
+    if (!v) continue;
+    const directHash = crypto.createHash('sha256').update(v, 'utf8').digest('hex');
     for (const expected of ALLOWED_GATE_HASHES) {
-      if (safeCompareHash(normHash, expected)) return true;
+      if (safeCompareHash(directHash, expected)) return true;
     }
   }
 
   return false;
+}
+
+function parseCookieHeader(header) {
+  const map = {};
+  if (!header || typeof header !== 'string') return map;
+  const parts = header.split(';');
+  for (const part of parts) {
+    const idx = part.indexOf('=');
+    if (idx === -1) continue;
+    const key = part.slice(0, idx).trim();
+    let val = part.slice(idx + 1).trim();
+    if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
+      val = val.slice(1, -1);
+    }
+    map[key] = val;
+  }
+  return map;
 }
 
 function isAuthorized(req) {
@@ -1281,9 +1324,9 @@ function isAuthorized(req) {
     if (verifyPassword(token)) return true;
   }
 
-  // 3. Cookie check
+  // 3. Cookie check (robust multi-format parsing)
   const cookieHeader = req.headers['cookie'] || '';
-  const cookies = querystring.parse(cookieHeader, '; ');
+  const cookies = parseCookieHeader(cookieHeader);
   const val = cookies['snowgate_gate'];
   if (val) {
     if (verifyPassword(val)) return true;
