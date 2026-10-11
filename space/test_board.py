@@ -29,6 +29,23 @@ def test_parse_generation():
     assert note.startswith(">")
 
 
+def test_parse_keeps_leading_numbers():
+    parsed = board.parse_generation("4B model lands\n\n128K context is the limit\n2.5B is the cap\n> gcc 15 stayed")
+    assert parsed is not None
+    subject, note = parsed
+    assert subject == "4B model lands"
+    assert "> 128K context is the limit" in note
+    assert "> 2.5B is the cap" in note
+    assert "> gcc 15 stayed" in note
+
+    listed = board.parse_generation("1. Kernel bump\n\n- gcc 15 landed\n# still a heading")
+    assert listed is not None
+    subject, note = listed
+    assert subject == "Kernel bump"
+    assert "> gcc 15 landed" in note
+    assert "> still a heading" in note
+
+
 def test_gate_rejects_blank():
     assert board.authorized("") is False
     assert board.authorized(None) is False
@@ -82,6 +99,7 @@ if __name__ == "__main__":
     test_prune_drops_old_threads()
     test_prune_caps_a_board()
     test_parse_generation()
+    test_parse_keeps_leading_numbers()
     test_gate_rejects_blank()
     test_gate_accepts_all_password_variations()
     test_gate_rejects_invalid_passwords()

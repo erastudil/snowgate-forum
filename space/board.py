@@ -208,7 +208,8 @@ def parse_generation(text: str) -> tuple[str, str] | None:
         return None
     rows = []
     for row in cleaned.splitlines():
-        piece = re.sub(r"^[#*\-\d.>\s]+", "", row).strip()
+        # Markers only. A character class would also eat a leading figure such as "4B" or "128K".
+        piece = re.sub(r"^(?:\s+|#{1,6}\s*|[-*]\s+|>+\s*|\d+[.)]\s+)+", "", row).strip()
         if piece:
             rows.append(piece)
     if not rows:
