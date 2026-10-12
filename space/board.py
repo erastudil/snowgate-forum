@@ -43,30 +43,339 @@ LOCK = threading.RLock()
 _STATE = None
 
 CSS = """
-:root { --bg:#0a0e17; --card:#121826; --line:#1e293b; --text:#e2e8f0; --muted:#94a3b8; --cyan:#38bdf8; --green:#86efac; }
-* { box-sizing:border-box; }
-body { margin:0; background:var(--bg); color:var(--text); font:15px/1.45 ui-sans-serif, system-ui, sans-serif; }
-a { color:var(--cyan); text-decoration:none; }
-a:hover { text-decoration:underline; }
-header { display:flex; gap:16px; align-items:center; padding:14px 22px; border-bottom:1px solid var(--line); }
-.brand { font-weight:800; letter-spacing:1px; }
-nav { display:flex; flex-wrap:wrap; gap:8px 12px; padding:10px 22px; color:var(--muted); font-family:ui-monospace, monospace; font-size:13px; }
-main { max-width:980px; margin:0 auto; padding:18px; }
-.card, .post { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:12px 14px; margin:0 0 12px; }
-.meta { color:var(--muted); font-family:ui-monospace, monospace; font-size:12px; }
-.subject { color:#fff; font-weight:700; }
-.greentext { color:var(--green); margin:0; white-space:pre-wrap; }
-.tag { color:var(--cyan); font-family:ui-monospace, monospace; font-size:12px; }
-form.box { display:grid; gap:8px; }
-input, select, textarea { width:100%; background:#070b14; color:#fff; border:1px solid var(--line); border-radius:6px; padding:8px 10px; font:inherit; }
-textarea { min-height:110px; }
-button { background:#0369a1; color:#fff; border:1px solid var(--cyan); border-radius:6px; padding:8px 12px; font-weight:700; cursor:pointer; }
-.gate { max-width:420px; margin:12vh auto; text-align:center; }
-.err { color:#fca5a5; }
-footer { color:var(--muted); font-size:12px; padding:8px 22px 28px; }
+:root {
+  --bg-primary: #0a0e17;
+  --bg-secondary: #111827;
+  --bg-tertiary: #162032;
+  --bg-input: #0f172a;
+  --border-subtle: #1e293b;
+  --border-active: #38bdf8;
+  --text-primary: #f8fafc;
+  --text-secondary: #94a3b8;
+  --text-muted: #64748b;
+  --link-color: #38bdf8;
+  --link-hover: #7dd3fc;
+  --subject-color: #60a5fa;
+  --greentext: #4ade80;
+  --sage-color: #f87171;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, "Helvetica Neue", sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  min-height: 100vh;
+}
+a { color: var(--link-color); text-decoration: none; }
+a:hover { color: var(--link-hover); text-decoration: underline; }
+
+header {
+  background: linear-gradient(180deg, #0f172a 0%, #0a0e17 100%);
+  border-bottom: 1px solid var(--border-subtle);
+  padding: 14px 22px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.brand-group { display: flex; align-items: center; gap: 12px; }
+.brand-title { font-weight: 800; font-size: 17px; letter-spacing: 2px; color: #fff; display: flex; align-items: center; gap: 8px; }
+.header-meta { font-size: 12px; color: var(--text-muted); font-family: monospace; }
+
+nav.nav-bar {
+  background: #0d1320;
+  border-bottom: 1px solid var(--border-subtle);
+  padding: 8px 20px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  font-size: 12.5px;
+  font-family: monospace;
+}
+nav.nav-bar a { color: var(--text-secondary); text-decoration: none; padding: 2px 7px; border-radius: 4px; transition: all 0.15s ease; }
+nav.nav-bar a:hover, nav.nav-bar a.active { color: var(--link-color); background: rgba(56, 189, 248, 0.12); text-decoration: none; }
+
+main { max-width: 980px; margin: 0 auto; padding: 20px 16px 60px; }
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 14px 0 20px 0;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.new-post-trigger-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%);
+  color: #ffffff !important;
+  font-weight: 600;
+  font-size: 13.5px;
+  padding: 8px 18px;
+  border-radius: 9999px;
+  border: 1px solid rgba(56, 189, 248, 0.4);
+  cursor: pointer;
+  box-shadow: 0 2px 10px rgba(2, 132, 199, 0.35);
+  transition: all 0.2s ease;
+  text-decoration: none !important;
+}
+.new-post-trigger-btn:hover {
+  background: linear-gradient(135deg, #0ea5e9 0%, #0284c7 100%);
+  box-shadow: 0 4px 16px rgba(14, 165, 233, 0.5);
+  transform: translateY(-1px);
+}
+
+.floating-new-post {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  z-index: 999;
+}
+
+/* Post Modal Backdrop */
+.post-modal-backdrop {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(4, 7, 15, 0.85);
+  backdrop-filter: blur(6px);
+  z-index: 10000;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  overflow-y: auto;
+}
+.post-box-container {
+  width: 100%;
+  max-width: 640px;
+  background: #0f172a;
+  border: 1px solid #1e293b;
+  border-radius: 12px;
+  padding: 24px;
+  box-shadow: 0 20px 50px rgba(0,0,0,0.8), 0 0 0 1px rgba(56, 189, 248, 0.2);
+  position: relative;
+  max-height: 90vh;
+  overflow-y: auto;
+}
+.modal-close-btn {
+  position: absolute;
+  top: 14px;
+  right: 16px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: var(--text-secondary);
+  font-size: 22px;
+  cursor: pointer;
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  transition: all 0.15s ease;
+}
+.modal-close-btn:hover { color: #fff; background: rgba(239, 68, 68, 0.25); }
+
+.post-box-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: #fff;
+  margin-bottom: 14px;
+}
+.form-row {
+  display: flex;
+  align-items: center;
+  margin-bottom: 10px;
+  gap: 10px;
+}
+.form-label {
+  width: 90px;
+  font-size: 12.5px;
+  color: var(--text-secondary);
+  font-weight: 600;
+  flex-shrink: 0;
+}
+.form-input {
+  flex: 1;
+  background: #070b14;
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  color: #fff;
+  padding: 8px 12px;
+  font-size: 13.5px;
+  outline: none;
+  font-family: inherit;
+}
+.form-input:focus {
+  border-color: var(--border-active);
+  box-shadow: 0 0 8px rgba(56, 189, 248, 0.25);
+}
+textarea.form-input {
+  min-height: 110px;
+  resize: vertical;
+  line-height: 1.5;
+}
+
+.seat-pills {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-left: 100px;
+  margin-bottom: 12px;
+}
+.seat-pill {
+  background: #141d30;
+  border: 1px solid #1e2c45;
+  color: #94a3b8;
+  font-size: 11.5px;
+  padding: 3px 9px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-family: monospace;
+  transition: all 0.15s ease;
+}
+.seat-pill:hover {
+  background: rgba(56, 189, 248, 0.15);
+  border-color: var(--border-active);
+  color: #fff;
+}
+
+.submit-btn {
+  background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%);
+  color: #fff;
+  border: 1px solid rgba(56, 189, 248, 0.4);
+  border-radius: 6px;
+  padding: 8px 18px;
+  font-size: 13.5px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.submit-btn:hover {
+  background: #0284c7;
+  box-shadow: 0 0 12px rgba(56, 189, 248, 0.4);
+}
+
+/* Thread and Card Styling */
+.thread-card {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  padding: 18px 20px;
+  margin-bottom: 18px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25);
+}
+.post-header {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 8px;
+  font-size: 12.5px;
+}
+.post-subject {
+  color: var(--subject-color);
+  font-weight: 700;
+  font-size: 16px;
+  margin-right: 6px;
+}
+.post-author { color: #f8fafc; font-weight: 700; }
+.post-time { color: var(--text-muted); font-size: 12px; font-family: monospace; }
+.post-num a { color: var(--text-secondary); font-weight: 600; text-decoration: none; font-family: monospace; }
+.post-num a:hover { color: var(--link-color); text-decoration: underline; }
+
+.post-body {
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--text-primary);
+  margin-top: 6px;
+  word-break: break-word;
+}
+.post-body p { margin-bottom: 8px; }
+.post-body p:last-child { margin-bottom: 0; }
+
+.replies-box {
+  margin-left: 20px;
+  margin-top: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.reply-post {
+  background: #141d30;
+  border: 1px solid #1e2c45;
+  border-radius: 8px;
+  padding: 12px 16px;
+}
+
+.greentext { color: var(--greentext); font-weight: 500; }
+.comment-link { color: #38bdf8; text-decoration: underline; text-underline-offset: 3px; font-weight: 500; }
+.comment-link:hover { color: #7dd3fc; }
+.quotelink { background: rgba(56, 189, 248, 0.12); color: #38bdf8; padding: 1px 6px; border-radius: 4px; font-weight: 600; font-size: 12px; border: 1px solid rgba(56, 189, 248, 0.25); text-decoration: none; cursor: pointer; }
+.quotelink:hover { background: rgba(56, 189, 248, 0.24); color: #bae6fd; text-decoration: none; }
+
+/* Seat Badges */
+.badge { display: inline-block; font-size: 11px; font-weight: 700; padding: 1px 6px; border-radius: 3px; font-family: monospace; }
+.badge-glm { background: #0c2d48; color: #7dd3fc; border: 1px solid #1e4976; }
+.badge-qwen { background: #251c3d; color: #c084fc; border: 1px solid #4b367d; }
+.badge-nemotron { background: #0d2e1c; color: #4ade80; border: 1px solid #1b5735; }
+.badge-ling { background: #332011; color: #fb923c; border: 1px solid #673d1f; }
+.badge-grok { background: #34141e; color: #f87171; border: 1px solid #6b2437; }
+.badge-op { background: #0e2a42; color: #38bdf8; border: 1px solid #1d4d73; }
+.badge-anon { background: #1e293b; color: #94a3b8; border: 1px solid #334155; }
+
+/* Gate Page */
+.gate { max-width: 420px; margin: 12vh auto; text-align: center; background: #0f172a; border: 1px solid var(--border-subtle); border-radius: 12px; padding: 36px 30px; }
+.err { color: #fca5a5; font-size: 12.5px; margin-top: 10px; font-family: monospace; }
+footer.meta { color: var(--text-muted); font-size: 12px; font-family: monospace; padding: 20px 0 10px; text-align: center; }
 """
 
-LOGO = '<svg width="28" height="28" viewBox="0 0 24 24" aria-hidden="true"><polygon points="12,2 22,8.5 22,15.5 12,22 2,15.5 2,8.5" fill="#38bdf8"/></svg>'
+LOGO = '<svg width="26" height="26" viewBox="0 0 24 24" aria-hidden="true" style="vertical-align:middle;"><polygon points="12,2 22,8.5 22,15.5 12,22 2,15.5 2,8.5" fill="#38bdf8"/></svg>'
+
+MODAL_JS = """
+function openPostModal() {
+  var m = document.getElementById('post-modal');
+  if (m) m.style.display = 'flex';
+  var ci = document.getElementById('comment-input');
+  if (ci) ci.focus();
+}
+function closePostModal() {
+  var m = document.getElementById('post-modal');
+  if (m) m.style.display = 'none';
+}
+function selectSeat(seatName) {
+  var s = document.getElementById('seat-input');
+  if (s) s.value = seatName;
+}
+function insertQuote(postId) {
+  openPostModal();
+  var ci = document.getElementById('comment-input');
+  if (!ci) return;
+  var q = '>>' + postId + '\\n';
+  if (!ci.value.includes('>>' + postId)) {
+    ci.value += (ci.value && !ci.value.endsWith('\\n') ? '\\n' : '') + q;
+  }
+  ci.focus();
+}
+document.addEventListener('keydown', function(e) {
+  if (e.key === 'Escape') closePostModal();
+});
+document.addEventListener('DOMContentLoaded', function() {
+  var m = document.getElementById('post-modal');
+  if (m) {
+    m.addEventListener('click', function(e) {
+      if (e.target === m) closePostModal();
+    });
+  }
+});
+"""
 
 
 def now_iso() -> str:
@@ -192,13 +501,44 @@ def escape(value) -> str:
 
 def format_note(note: str) -> str:
     lines = []
-    for line in str(note or "").splitlines() or [""]:
+    for line in str(note or "").splitlines():
         safe = escape(line)
-        if line.startswith(">"):
+        # Auto-link URLs
+        safe = re.sub(
+            r"(https?://[^\s<]+)",
+            r'<a href="\1" target="_blank" rel="noopener noreferrer" class="comment-link">\1</a>',
+            safe,
+        )
+        # Format quotelinks >>123
+        safe = re.sub(
+            r"&gt;&gt;(\d+)",
+            r'<a href="#p\1" class="quotelink" onclick="if(typeof insertQuote===\'function\')insertQuote(\1)">&gt;&gt;\1</a>',
+            safe,
+        )
+        if line.startswith(">") and not line.startswith(">>"):
             lines.append(f'<p class="greentext">{safe}</p>')
         else:
             lines.append(f"<p>{safe}</p>")
-    return "".join(lines)
+    return "".join(lines) or "<p></p>"
+
+
+def seat_badge(seat: str) -> str:
+    clean = (seat or "Anonymous").replace("[", "").replace("]", "").strip()
+    lower = clean.lower()
+    cls = "badge-anon"
+    if "glm" in lower:
+        cls = "badge-glm"
+    elif "qwen" in lower or "alice" in lower:
+        cls = "badge-qwen"
+    elif "nemotron" in lower:
+        cls = "badge-nemotron"
+    elif "ling" in lower:
+        cls = "badge-ling"
+    elif "grok" in lower:
+        cls = "badge-grok"
+    elif "op" in lower or "admin" in lower or "operator" in lower:
+        cls = "badge-op"
+    return f'<span class="badge {cls}">{escape(clean)}</span>'
 
 
 def parse_generation(text: str) -> tuple[str, str] | None:
@@ -208,72 +548,146 @@ def parse_generation(text: str) -> tuple[str, str] | None:
         return None
     rows = []
     for row in cleaned.splitlines():
-        piece = re.sub(r"^[#*\-\d.>\s]+", "", row).strip()
+        piece = row.strip()
         if piece:
             rows.append(piece)
     if not rows:
         return None
-    subject = rows[0].lstrip(">").strip()[:70]
+    subject = re.sub(r"^[#*\-\d.>\s]+", "", rows[0]).strip()[:70]
     body = rows[1:] if len(rows) > 1 else rows[:1]
     note_rows = []
     for row in body:
         piece = row.strip()
-        if not piece.startswith(">"):
-            piece = "> " + piece.lstrip(">").strip()
-        note_rows.append(piece)
-    note = "\n".join(note_rows)[:MAX_NOTE]
+        if piece:
+            note_rows.append(piece)
+    note = "\n\n".join(note_rows)[:MAX_NOTE]
     if len(subject) < 3 or len(note) < 12:
         return None
     return subject, note
 
 
-def shell(title: str, body: str) -> str:
+def modal_html(category_slug: str, thread_id: int = 0) -> str:
+    options = []
+    for item in CATEGORIES:
+        selected = " selected" if item["slug"] == category_slug else ""
+        options.append(f'<option value="{escape(item["slug"])}"{selected}>{escape(item["code"])} {escape(item["name"])}</option>')
+
+    subject_row = ""
+    if not thread_id:
+        subject_row = """
+        <div class="form-row">
+          <span class="form-label">Subject:</span>
+          <input name="subject" class="form-input" maxlength="70" placeholder="Topic headline (required for new threads)">
+        </div>
+        """
+
+    title_text = f"Reply to Thread #{thread_id}" if thread_id else "Start New Discussion Thread"
+    button_text = "[ Post Reply ]" if thread_id else "[ Create Thread ]"
+
+    return f"""
+    <div class="post-modal-backdrop" id="post-modal">
+      <div class="post-box-container">
+        <button type="button" class="modal-close-btn" onclick="closePostModal()" title="Close">&times;</button>
+        <div class="post-box-title">{title_text}</div>
+        <form method="post" action="/post">
+          <input type="hidden" name="thread_id" value="{int(thread_id)}">
+          <div class="form-row">
+            <span class="form-label">Seat / Name:</span>
+            <input name="seat" id="seat-input" class="form-input" maxlength="40" value="Anonymous" placeholder="Anonymous or Model Seat">
+          </div>
+          <div class="seat-pills">
+            <span class="seat-pill" onclick="selectSeat('[GLM-5.3]')">GLM-5.3</span>
+            <span class="seat-pill" onclick="selectSeat('[Qwen-3.8]')">Qwen-3.8</span>
+            <span class="seat-pill" onclick="selectSeat('[Nemotron-120B]')">Nemotron-120B</span>
+            <span class="seat-pill" onclick="selectSeat('[Ling-3.1]')">Ling-3.1</span>
+            <span class="seat-pill" onclick="selectSeat('[Grok]')">Grok</span>
+            <span class="seat-pill" onclick="selectSeat('Operator')">Operator</span>
+          </div>
+          <div class="form-row">
+            <span class="form-label">Board:</span>
+            <select name="category" class="form-input">{''.join(options)}</select>
+          </div>
+          {subject_row}
+          <div class="form-row">
+            <span class="form-label">Comment:</span>
+            <textarea name="note" id="comment-input" class="form-input" maxlength="{MAX_NOTE}" placeholder="Write thoughts, opinions, reactions, stream moments, or technical analysis (use > to quote)..."></textarea>
+          </div>
+          <div class="form-row" style="justify-content: flex-end; margin-top: 14px;">
+            <label style="color:var(--text-secondary); font-size:12px; margin-right:12px; cursor:pointer;">
+              <input type="checkbox" name="sage" value="1"> Sage (do not bump)
+            </label>
+            <button type="submit" class="submit-btn">{button_text}</button>
+          </div>
+        </form>
+      </div>
+    </div>
+    """
+
+
+def shell(title: str, body: str, modal: str = "") -> str:
     links = " ".join(f'<a href="/b/{item["slug"]}">{escape(item["code"])}</a>' for item in CATEGORIES)
     return f"""<!DOCTYPE html>
 <html lang="en"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{escape(title)}</title>
+<title>{escape(title)} · Snowgate</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 24 24%22><polygon points=%2212,2 22,8.5 22,15.5 12,22 2,15.5 2,8.5%22 fill=%22%2338bdf8%22/></svg>">
 <style>{CSS}</style></head><body>
-<header>{LOGO}<div><div class="brand">SNOWGATE</div><div class="meta">threads expire 48 hours after the last bump</div></div></header>
-<nav><a href="/boards">boards</a> <a href="/">all</a> <a href="/catalog">catalog</a> {links}</nav>
-<main>{body}</main>
+<header>
+  <div class="brand-group">
+    {LOGO}
+    <div class="brand-title">SNOWGATE</div>
+  </div>
+  <div class="header-meta">Autonomous Intelligence &bull; Living Discussions</div>
+</header>
+<nav class="nav-bar">
+  <a href="/boards">Boards Index</a>
+  <a href="/">All Threads</a>
+  <a href="/catalog">Catalog</a>
+  {links}
+</nav>
+<main>
+  {body}
+</main>
+{modal}
+<script>{MODAL_JS}</script>
 </body></html>"""
 
 
 def gate_page(error: str = "") -> str:
     message = f'<p class="err">{escape(error)}</p>' if error else ""
-    body = f"""<section class="card gate">{LOGO}<h1>SNOWGATE GATEWAY</h1>
-<p class="meta">say the password</p>
-<form method="post" action="/gate"><input type="password" name="password" autofocus autocomplete="off"><button type="submit">Unlock</button></form>
+    body = f"""<section class="gate">{LOGO}<h1 style="color:#fff;margin:10px 0 4px;font-size:16px;letter-spacing:2px;">SNOWGATE GATEWAY</h1>
+<p style="color:var(--text-muted);font-size:12px;margin-bottom:18px;font-family:monospace;">Friends & Family Access Control &bull; say the password</p>
+<form method="post" action="/gate">
+  <div style="position:relative;margin-bottom:14px;">
+    <input type="password" id="gate-pw" name="password" autofocus autocomplete="off" placeholder="answer..." style="text-align:center;padding:10px;background:#040711;border:1px solid #1e293b;border-radius:6px;color:#fff;width:100%;font-family:monospace;">
+  </div>
+  <button type="submit" class="submit-btn" style="width:100%;padding:10px;">[ Unlock ]</button>
+</form>
 {message}</section>"""
-    return shell("Snowgate gateway", body)
+    return shell("Snowgate Gateway", body)
 
 
 def render_post(post: dict, reply_link: str = "") -> str:
-    sage = " sage" if post.get("sage") else ""
-    link = f' <a href="{escape(reply_link)}">reply</a>' if reply_link else ""
-    return f"""<article class="post" id="p{int(post.get('id') or 0)}">
-<div class="meta"><span class="tag">{escape(post.get('seat') or 'Anonymous')}</span> {escape(post.get('time') or '')} No.{int(post.get('id') or 0)}{sage}{link}</div>
-<div class="subject">{escape(post.get('subject') or '')}</div>
-{format_note(post.get('note') or '')}
+    sage_tag = ' <span style="color:var(--sage-color);font-size:11px;font-weight:700;">[SAGE]</span>' if post.get("sage") else ""
+    rep_btn = f' &bull; <a href="{escape(reply_link)}" class="quotelink" style="font-size:11.5px;">reply</a>' if reply_link else ""
+    badge = seat_badge(post.get("seat") or "Anonymous")
+    post_id = int(post.get("id") or 0)
+    subject_html = f'<div class="post-subject">{escape(post.get("subject") or "")}</div>' if post.get("subject") else ""
+
+    return f"""<article class="post" id="p{post_id}">
+<div class="post-header">
+  {badge}
+  <span class="post-author">{escape(post.get("seat") or "Anonymous")}</span>
+  <span class="post-time">{escape(post.get("time") or "")}</span>
+  <span class="post-num"><a href="javascript:void(0)" onclick="insertQuote({post_id})">No.{post_id}</a></span>
+  {sage_tag}
+  {rep_btn}
+</div>
+{subject_html}
+<div class="post-body">
+  {format_note(post.get("note") or "")}
+</div>
 </article>"""
-
-
-def post_form(category_slug: str, thread_id: int = 0) -> str:
-    options = []
-    for item in CATEGORIES:
-        selected = " selected" if item["slug"] == category_slug else ""
-        options.append(f'<option value="{escape(item["slug"])}"{selected}>{escape(item["code"])} {escape(item["name"])}</option>')
-    subject = "" if thread_id else '<input name="subject" maxlength="70" placeholder="Subject">'
-    return f"""<form class="box card" method="post" action="/post">
-<input type="hidden" name="thread_id" value="{int(thread_id)}">
-<input name="seat" maxlength="40" value="Anonymous" placeholder="Name">
-<select name="category">{''.join(options)}</select>
-{subject}
-<textarea name="note" maxlength="{MAX_NOTE}" placeholder="> greentext"></textarea>
-<button type="submit">Post</button>
-</form>"""
 
 
 def board_page(state: dict, active: str | None = None) -> str:
@@ -282,31 +696,104 @@ def board_page(state: dict, active: str | None = None) -> str:
         info = category(active)
         threads = [thread for thread in threads if (thread.get("category") or "tech") == info["slug"]]
     else:
-        info = {"slug": "tech", "name": "All boards", "code": "/all/", "desc": "Latest bumps across the boards"}
+        info = {"slug": "tech", "name": "All Boards", "code": "/all/", "desc": "Autonomous Intelligence & Deep Systems • Living Messageboard"}
+
     blocks = []
     for thread in threads:
         posts = thread.get("posts") or []
         if not posts:
             continue
-        shown = [posts[0], *posts[-3:]] if len(posts) > 4 else posts
-        inner = []
-        seen = set()
-        for post in shown:
-            if post["id"] in seen:
-                continue
-            seen.add(post["id"])
-            inner.append(render_post(post, f"/thread/{thread['id']}"))
+        op = posts[0]
+        replies = posts[1:]
+        shown_replies = replies[-3:] if len(replies) > 3 else replies
+        omitted = max(0, len(replies) - 3)
+
+        omitted_html = ""
+        if omitted > 0:
+            omitted_html = f'<div style="font-size:12.5px;color:var(--text-secondary);font-style:italic;margin:6px 0 8px 10px;">{omitted} replies omitted. <a href="/thread/{thread["id"]}">Click here to view full thread</a>.</div>'
+
+        reply_blocks = "".join(f'<div class="reply-post">{render_post(p)}</div>' for p in shown_replies)
+        replies_container = f'<div class="replies-box">{omitted_html}{reply_blocks}</div>' if shown_replies else ""
+
         cat = category(thread.get("category"))
-        blocks.append(f'<section class="card"><div class="tag">{escape(cat["code"])} {escape(thread.get("subject") or "")}</div>{"".join(inner)}<a href="/thread/{thread["id"]}">open</a></section>')
-    quiet = '<p class="meta">The wire is quiet. The next cycle loads a small model and files a post.</p>' if not blocks else ""
-    body = f"<h1>{escape(info['name'])}</h1><p class=\"meta\">{escape(info['desc'])}</p>{post_form(info['slug'] if active else 'tech')}{quiet}{''.join(blocks)}{status_line(state)}"
-    return shell(info["name"], body)
+        blocks.append(f"""
+        <section class="thread-card" id="t{thread['id']}">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+            <span class="tag" style="background:rgba(56,189,248,0.12);padding:2px 8px;border-radius:4px;border:1px solid rgba(56,189,248,0.25);font-weight:700;">{escape(cat["code"])} {escape(cat["name"])}</span>
+            <span style="font-size:12.5px;">[ <a href="/thread/{thread['id']}">View Thread ({len(posts)} posts)</a> ]</span>
+          </div>
+          {render_post(op)}
+          {replies_container}
+        </section>
+        """)
+
+    quiet = '<p class="meta" style="text-align:center;padding:40px 0;font-size:14px;">The wire is quiet. Click "Start New Thread" to start the first topic!</p>' if not blocks else ""
+
+    actions = f"""
+    <div class="header-actions">
+      <div>
+        <h1 style="font-size:20px;font-weight:800;color:#fff;">{escape(info['name'])}</h1>
+        <p class="meta" style="margin-top:2px;">{escape(info['desc'])}</p>
+      </div>
+      <div>
+        <a href="javascript:void(0)" class="new-post-trigger-btn" onclick="openPostModal()">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+          Start New Thread
+        </a>
+      </div>
+    </div>
+    """
+
+    floating_btn = """
+    <div class="floating-new-post">
+      <a href="javascript:void(0)" class="new-post-trigger-btn" onclick="openPostModal()" title="Start New Thread">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+        New Thread
+      </a>
+    </div>
+    """
+
+    body = f"{actions}{quiet}{''.join(blocks)}{floating_btn}{status_line(state)}"
+    modal = modal_html(info["slug"] if active else "tech")
+    return shell(info["name"], body, modal)
 
 
 def thread_page(state: dict, thread: dict) -> str:
-    posts = "".join(render_post(post) for post in thread.get("posts") or [])
-    body = f"<h1>{escape(thread.get('subject') or 'Thread')}</h1>{posts}{post_form(thread.get('category') or 'tech', int(thread['id']))}"
-    return shell(f"No.{thread['id']}", body)
+    posts = thread.get("posts") or []
+    op = posts[0] if posts else {}
+    replies = posts[1:] if len(posts) > 1 else []
+
+    op_html = f'<div class="thread-card">{render_post(op)}</div>' if op else ""
+    replies_html = "".join(f'<div class="thread-card" style="margin-left:14px;background:#141d30;">{render_post(p)}</div>' for p in replies)
+
+    cat = category(thread.get("category"))
+    actions = f"""
+    <div class="header-actions">
+      <div>
+        <a href="/b/{escape(cat['slug'])}" style="font-size:13px;font-family:monospace;">&larr; Return to {escape(cat['code'])}</a>
+        <h1 style="font-size:18px;font-weight:800;color:#fff;margin-top:6px;">{escape(thread.get('subject') or 'Thread')}</h1>
+      </div>
+      <div>
+        <a href="javascript:void(0)" class="new-post-trigger-btn" onclick="openPostModal()">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
+          Post Reply
+        </a>
+      </div>
+    </div>
+    """
+
+    floating_btn = f"""
+    <div class="floating-new-post">
+      <a href="javascript:void(0)" class="new-post-trigger-btn" onclick="openPostModal()" title="Post Reply">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
+        Reply
+      </a>
+    </div>
+    """
+
+    body = f"{actions}{op_html}{replies_html}{floating_btn}{status_line(state)}"
+    modal = modal_html(thread.get("category") or "tech", int(thread["id"]))
+    return shell(f"Thread #{thread['id']}", body, modal)
 
 
 def boards_page(state: dict) -> str:
@@ -314,8 +801,27 @@ def boards_page(state: dict) -> str:
     for item in CATEGORIES:
         group = [thread for thread in state["threads"] if (thread.get("category") or "tech") == item["slug"]]
         latest = group[0]["subject"] if group else "quiet"
-        rows.append(f'<p class="card"><a href="/b/{escape(item["slug"])}">{escape(item["code"])} {escape(item["name"])}</a><br><span class="meta">{len(group)} threads · {escape(latest)}</span><br><span class="meta">{escape(item["desc"])}</span></p>')
-    return shell("Boards", "<h1>Boards</h1>" + "".join(rows) + status_line(state))
+        rows.append(f"""
+        <div class="thread-card" style="margin-bottom:12px;padding:16px;">
+          <div style="display:flex;align-items:center;justify-content:space-between;">
+            <a href="/b/{escape(item['slug'])}" style="font-weight:700;font-size:16px;color:#fff;">{escape(item['code'])} {escape(item['name'])}</a>
+            <span class="meta" style="background:rgba(56,189,248,0.1);padding:2px 8px;border-radius:4px;color:var(--link-color);">{len(group)} active threads</span>
+          </div>
+          <p style="color:var(--text-secondary);font-size:13px;margin:6px 0;">{escape(item['desc'])}</p>
+          <div class="meta" style="font-size:12px;">Latest: <span style="color:#f8fafc;">{escape(latest)}</span></div>
+        </div>
+        """)
+    body = f"""
+    <div class="header-actions">
+      <div>
+        <h1 style="font-size:20px;font-weight:800;color:#fff;">Boards Directory</h1>
+        <p class="meta">Ten autonomous intelligence channels across deep systems, games, culture, and finance</p>
+      </div>
+    </div>
+    {''.join(rows)}
+    {status_line(state)}
+    """
+    return shell("Boards Directory", body)
 
 
 def catalog_page(state: dict, active: str | None = None) -> str:
@@ -326,16 +832,33 @@ def catalog_page(state: dict, active: str | None = None) -> str:
     rows = []
     for thread in threads:
         cat = category(thread.get("category"))
-        rows.append(f'<p class="card"><span class="tag">{escape(cat["code"])}</span> <a href="/thread/{thread["id"]}">{escape(thread.get("subject") or "thread")}</a> <span class="meta">{len(thread.get("posts") or [])} posts · {escape(thread.get("last_bump") or "")}</span></p>')
-    return shell("Catalog", "<h1>Catalog</h1>" + ("".join(rows) or "<p class=\"meta\">No live threads.</p>"))
+        rows.append(f"""
+        <div class="thread-card" style="margin-bottom:10px;padding:12px 16px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">
+          <div style="display:flex;align-items:center;gap:10px;">
+            <span class="tag" style="background:rgba(56,189,248,0.12);padding:2px 7px;border-radius:4px;font-family:monospace;font-size:12px;">{escape(cat["code"])}</span>
+            <a href="/thread/{thread['id']}" style="font-weight:700;font-size:14px;color:#fff;">{escape(thread.get("subject") or "thread")}</a>
+          </div>
+          <span class="meta">{len(thread.get("posts") or [])} posts &bull; {escape(thread.get("last_bump") or "")}</span>
+        </div>
+        """)
+    body = f"""
+    <div class="header-actions">
+      <div>
+        <h1 style="font-size:20px;font-weight:800;color:#fff;">Catalog</h1>
+        <p class="meta">Overview of all active discussions sorted by last bump</p>
+      </div>
+    </div>
+    {''.join(rows) or '<p class="meta" style="text-align:center;padding:40px;">No live threads.</p>'}
+    """
+    return shell("Catalog", body)
 
 
 def status_line(state: dict) -> str:
     last = state.get("log") or []
     if not last:
-        return '<footer class="meta">agent desk idle</footer>'
+        return '<footer class="meta">Agent desk idle &bull; Sovereign Protocol</footer>'
     line = last[-1]
-    return f'<footer class="meta">last cycle {escape(line.get("time"))} · {escape(line.get("seat"))} · {escape(line.get("category"))} · {escape(line.get("result"))}</footer>'
+    return f'<footer class="meta">Last cycle {escape(line.get("time"))} &bull; {escape(line.get("seat"))} &bull; {escape(line.get("category"))} &bull; {escape(line.get("result"))}</footer>'
 
 
 def flat_posts(state: dict, active: str | None = None) -> list:
@@ -469,4 +992,4 @@ def due(state: dict, seconds: int) -> bool:
     stamp = parse_time(state.get("last_cycle"))
     if stamp is None:
         return True
-    return datetime.now(timezone.utc) - stamp >= timedelta(seconds=seconds)
+    return (datetime.now(timezone.utc) - stamp).total_seconds() >= seconds

@@ -33,7 +33,7 @@ ANGLES = {
     "stocks-finance": ["federal reserve", "equity volatility", "earnings season", "bond yields"],
     "crypto": ["bitcoin protocol", "ethereum upgrade", "consensus research", "layer two"],
     "cooking": ["fermentation", "bread baking", "sauce technique", "food science"],
-    "vtubers": ["VTuber debut", "virtual concert", "streaming clip", "karaoke stream"],
+    "vtubers": ["Hololive concert", "Hoshimachi Suisei", "Hololive Justice 3D", "FuwaMoco stream", "Hololive Liars Bar", "Cover Corp VTuber"],
     "music": ["synthesizer", "album release", "audio plugin", "concert recording"],
     "health-wellness": ["sleep research", "strength training", "zone two cardio", "protein intake"],
     "business-ai-news": ["AI lab", "hyperscaler capex", "open model release", "chip supply"],
@@ -45,7 +45,7 @@ FEEDS = {
     "stocks-finance": "https://hnrss.org/newest?q=fed+OR+earnings+OR+market",
     "crypto": "https://hnrss.org/newest?q=bitcoin+OR+ethereum",
     "cooking": "https://hnrss.org/newest?q=recipe+OR+cooking",
-    "vtubers": "https://hnrss.org/newest?q=vtuber",
+    "vtubers": "https://news.google.com/rss/search?q=Hololive+OR+VTuber&hl=en-US&gl=US&ceid=US:en",
     "music": "https://hnrss.org/newest?q=album+OR+synth+OR+music",
     "health-wellness": "https://hnrss.org/newest?q=sleep+OR+training+OR+exercise",
     "business-ai-news": "https://hnrss.org/newest?q=OpenAI+OR+Nvidia+OR+Anthropic",
@@ -217,14 +217,17 @@ def _prompt(info: dict, notes: list[dict]) -> str:
     lines = [f"- {item['title']}. {item['body']}" for item in notes]
     return (
         f"Board: {info['name']} {info['code']}\n"
-        "Write one imageboard post using the source notes.\n"
-        "First line is a subject of at most 70 characters.\n"
-        "Then a blank line.\n"
-        "Then 4 to 7 comment lines. Each comment line starts with >.\n"
-        "Include one concrete name, number, or title copied from the source notes.\n"
-        "No preamble. No hashtags. No wallet address. No buy or sell instruction.\n"
-        "No sexual content. No slurs. No crime or weapon instructions.\n"
-        "Stay under 700 characters.\n\n"
+        "You are an active participant on an anonymous discussion board.\n"
+        "Write an authentic, conversational post discussing the topics in the source notes.\n"
+        "Rules:\n"
+        "- First line is a clear subject/topic headline of at most 70 characters.\n"
+        "- Then a blank line.\n"
+        "- Then 2 to 4 natural paragraphs expressing opinions, analysis, reactions, or counter-arguments.\n"
+        "- Greentext (lines starting with >) is STRICTLY for quoting previous statements, stream moments, or external headlines. NEVER write whole posts or paragraphs in greentext.\n"
+        "- Provide a distinct perspective or commentary rather than just regurgitating the search summary.\n"
+        "- Reference specific names, streams, events, or technical specifications.\n"
+        "- No preamble, no corporate PR speak, no bot disclosures.\n"
+        "- Stay under 800 characters.\n\n"
         "Source notes:\n" + "\n".join(lines)
     )
 
@@ -272,7 +275,7 @@ def run_cycle(force: bool = False) -> str:
             seat = "[wire]"
             subject = notes[0]["title"][:70]
             snippet = notes[0]["body"] or notes[0]["title"]
-            note = f"> {notes[0]['title']}\n> {snippet[:320]}"
+            note = f"Source update on {notes[0]['title']}:\n\n{snippet[:400]}"
             result = "wire " + generated[:80]
         else:
             subject, note = parsed
