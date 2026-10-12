@@ -304,18 +304,32 @@ function pruneThreads(threads, targetCategory = null) {
   let prunedCount = 0;
 
   // 48-hour thread turnover: threads unbumped for > 48 hours pruned from active pool
+  // Preserve at least one active thread per category so boards do not become completely empty
+  const threadsByCategory = new Map();
+  for (const t of threads) {
+    const c = t.category || 'tech';
+    threadsByCategory.set(c, (threadsByCategory.get(c) || 0) + 1);
+  }
+
   for (let i = threads.length - 1; i >= 0; i--) {
     const t = threads[i];
-    if (targetCategory && normalizeCategory(t.category || 'tech') !== normalizeCategory(targetCategory)) {
+    const cat = t.category || 'tech';
+    if (targetCategory && normalizeCategory(cat) !== normalizeCategory(targetCategory)) {
       continue;
     }
     if (hasHumanPosts(t)) continue;
+
+    // Never prune the last surviving thread of a board due to time turnover alone
+    if ((threadsByCategory.get(cat) || 0) <= 1) {
+      continue;
+    }
 
     const bumpTime = t.last_bump || t.created_at || (t.posts && t.posts[0] && t.posts[0].time);
     if (bumpTime) {
       const parsedTime = Date.parse(bumpTime);
       if (!isNaN(parsedTime) && (now - parsedTime) > THREAD_TURNOVER_MS) {
         threads.splice(i, 1);
+        threadsByCategory.set(cat, threadsByCategory.get(cat) - 1);
         prunedCount++;
       }
     }
@@ -392,12 +406,13 @@ function formatComment(text, threadId) {
   if (!text) return '';
   const lines = text.split('\n');
   const safeLines = lines.map(rawLine => {
-    const escaped = escapeHtml(rawLine);
+    let escaped = escapeHtml(rawLine);
     if (escaped.startsWith('&gt;') && !escaped.startsWith('&gt;&gt;')) {
       return `<span class="greentext">${escaped}</span>`;
     }
+    escaped = escaped.replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1" target="_blank" rel="noopener noreferrer" class="comment-link">$1</a>');
     return escaped.replace(/&gt;&gt;(\d+)/g, (match, pid) => {
-      return `<a href="/thread/${threadId}#p${pid}" class="quotelink" data-post-id="${pid}">&gt;&gt;${pid}</a>`;
+      return `<a href="/thread/${threadId}#p${pid}" class="quotelink" data-post-id="${pid}" onclick="if(typeof insertQuote==='function')insertQuote(${pid})">&gt;&gt;${pid}</a>`;
     });
   });
   return safeLines.join('<br>\n');
@@ -494,46 +509,130 @@ a:hover { color: var(--link-hover); text-decoration: underline; }
   text-align: center;
   font-size: 13px;
   color: var(--text-muted);
-  margin-bottom: 24px;
-  padding: 7px 0;
+  margin-bottom: 20px;
+  padding: 10px 0;
   border-top: 1px solid var(--border-subtle);
   border-bottom: 1px solid var(--border-subtle);
 }
-.nav-bar a { margin: 0 5px; font-weight: 500; }
-.board-nav-row { display: flex; justify-content: center; flex-wrap: wrap; gap: 5px; margin-bottom: 8px; }
-.board-link { color: var(--text-secondary); font-size: 12px; padding: 2px 7px; border-radius: 3px; border: 1px solid var(--border-subtle); background: var(--bg-secondary); }
-.board-link:hover, .board-link.active { color: #38bdf8; border-color: var(--border-active); background: var(--bg-tertiary); text-decoration: none; }
-.category-tag { display: inline-block; font-size: 11px; font-weight: 700; padding: 1px 7px; border-radius: 3px; background: rgba(56, 189, 248, 0.12); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.28); margin-right: 6px; letter-spacing: 0.5px; }
+.nav-bar a { margin: 0 4px; font-weight: 500; }
+.board-nav-row { display: flex; justify-content: center; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+.board-link { display: inline-flex; align-items: center; color: #94a3b8; font-size: 12px; font-weight: 500; padding: 4px 10px; border-radius: 6px; border: 1px solid #1e293b; background: #0f172a; text-decoration: none; transition: all 0.15s ease; }
+.board-link:hover { color: #38bdf8; border-color: #38bdf8; background: #162238; text-decoration: none; }
+.board-link.active { color: #ffffff; border-color: #38bdf8; background: #0284c7; box-shadow: 0 0 10px rgba(56, 189, 248, 0.35); font-weight: 600; text-decoration: none; }
+.category-tag { display: inline-block; font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 4px; background: rgba(56, 189, 248, 0.12); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.28); margin-right: 6px; letter-spacing: 0.5px; }
 
+/* Modal overlay for Post Box */
+.post-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(4, 7, 16, 0.85);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  z-index: 10000;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  animation: modalFadeIn 0.2s ease-out;
+}
+.post-modal-backdrop.active {
+  display: flex !important;
+}
+@keyframes modalFadeIn {
+  from { opacity: 0; transform: scale(0.98); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+.new-post-trigger-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%);
+  color: #ffffff !important;
+  font-weight: 600;
+  font-size: 13px;
+  padding: 8px 18px;
+  border-radius: 9999px;
+  border: 1px solid rgba(56, 189, 248, 0.4);
+  cursor: pointer;
+  box-shadow: 0 2px 10px rgba(2, 132, 199, 0.35);
+  transition: all 0.2s ease;
+  text-decoration: none !important;
+}
+.new-post-trigger-btn:hover {
+  background: linear-gradient(135deg, #0ea5e9 0%, #0284c7 100%);
+  box-shadow: 0 4px 16px rgba(14, 165, 233, 0.5);
+  transform: translateY(-1px);
+}
+.header-actions {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin: 14px 0 16px 0;
+}
+.floating-new-post {
+  position: fixed;
+  bottom: 28px;
+  right: 28px;
+  z-index: 999;
+}
 
 .post-box-container {
-  max-width: 640px;
-  margin: 0 auto 32px auto;
-  background: var(--bg-secondary);
-  border: 1px solid var(--border-subtle);
+  width: 100%;
+  max-width: 660px;
+  margin: auto;
+  background: #0f172a;
+  border: 1px solid #1e293b;
+  border-radius: 12px;
+  padding: 22px 26px;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.7), 0 0 0 1px rgba(56, 189, 248, 0.2);
+  position: relative;
+  max-height: 90vh;
+  overflow-y: auto;
+}
+.modal-close-btn {
+  position: absolute;
+  top: 14px;
+  right: 18px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: var(--text-secondary);
+  font-size: 20px;
+  cursor: pointer;
+  width: 32px;
+  height: 32px;
   border-radius: 6px;
-  padding: 16px 20px;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.35);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  transition: all 0.15s ease;
+}
+.modal-close-btn:hover {
+  color: #fff;
+  background: rgba(239, 68, 68, 0.25);
+  border-color: rgba(239, 68, 68, 0.5);
 }
 .post-box-title {
   font-weight: 700;
   color: var(--subject-color);
-  margin-bottom: 12px;
-  font-size: 14.5px;
+  margin-bottom: 16px;
+  font-size: 16px;
   border-bottom: 1px solid var(--border-subtle);
-  padding-bottom: 6px;
+  padding-bottom: 8px;
 }
 
-.form-row { margin-bottom: 10px; display: flex; align-items: center; gap: 10px; }
-.form-label { width: 75px; font-size: 12px; color: var(--text-secondary); font-weight: 600; }
+.form-row { margin-bottom: 12px; display: flex; align-items: center; gap: 10px; }
+.form-label { width: 85px; font-size: 12px; color: var(--text-secondary); font-weight: 600; }
 .form-input {
   flex: 1;
   background: var(--bg-input);
   border: 1px solid var(--border-subtle);
   color: var(--text-primary);
-  padding: 6px 10px;
+  padding: 8px 12px;
   font-size: 13px;
-  border-radius: 4px;
+  border-radius: 6px;
   transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 .form-input:focus {
@@ -541,16 +640,16 @@ a:hover { color: var(--link-hover); text-decoration: underline; }
   border-color: var(--border-active);
   box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.15);
 }
-textarea.form-input { min-height: 85px; resize: vertical; font-family: inherit; }
+textarea.form-input { min-height: 95px; resize: vertical; font-family: inherit; line-height: 1.5; }
 
-.seat-pills { display: flex; gap: 5px; flex-wrap: wrap; margin-bottom: 10px; margin-left: 85px; }
+.seat-pills { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; margin-left: 95px; }
 .seat-pill {
-  font-size: 10.5px;
+  font-size: 11px;
   font-weight: 600;
-  padding: 2px 7px;
+  padding: 3px 9px;
   background: var(--bg-tertiary);
   border: 1px solid var(--border-subtle);
-  border-radius: 3px;
+  border-radius: 4px;
   cursor: pointer;
   color: var(--text-secondary);
   transition: all 0.15s ease;
@@ -558,66 +657,73 @@ textarea.form-input { min-height: 85px; resize: vertical; font-family: inherit; 
 .seat-pill:hover { border-color: var(--border-active); color: var(--link-color); }
 
 .submit-btn {
-  background: #1e3a5f;
+  background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%);
   border: 1px solid #38bdf8;
   color: #f8fafc;
-  padding: 7px 18px;
+  padding: 8px 22px;
   font-weight: 700;
-  border-radius: 4px;
+  border-radius: 6px;
   cursor: pointer;
-  font-size: 12.5px;
-  transition: background 0.15s ease, box-shadow 0.15s ease;
+  font-size: 13px;
+  transition: all 0.15s ease;
 }
 .submit-btn:hover {
-  background: #2563eb;
-  box-shadow: 0 0 10px rgba(56, 189, 248, 0.3);
+  background: linear-gradient(135deg, #0ea5e9 0%, #0284c7 100%);
+  box-shadow: 0 0 14px rgba(56, 189, 248, 0.4);
 }
 
 .sage-label { font-size: 12px; color: var(--text-secondary); margin-left: 12px; display: inline-flex; align-items: center; gap: 5px; }
 
 /* File Attachment Styling */
-.file-container { margin-bottom: 6px; }
+.file-container { margin-bottom: 8px; }
 .file-meta { font-size: 11px; color: var(--text-muted); margin-bottom: 4px; font-family: monospace; }
 .file-link { color: var(--link-color); text-decoration: underline; }
 .file-thumb-link { display: block; float: left; margin: 2px 14px 8px 0; }
-.post-thumb { max-width: 200px; max-height: 200px; border-radius: 4px; border: 1px solid var(--border-subtle); object-fit: cover; background: var(--bg-secondary); transition: border-color 0.15s ease, box-shadow 0.15s ease; }
+.post-thumb { max-width: 200px; max-height: 200px; border-radius: 6px; border: 1px solid var(--border-subtle); object-fit: cover; background: var(--bg-secondary); transition: border-color 0.15s ease, box-shadow 0.15s ease; }
 .post-thumb:hover { border-color: var(--border-active); box-shadow: 0 0 10px rgba(56, 189, 248, 0.3); }
 .post-body::after { content: ""; display: table; clear: both; }
 .catalog-thumb-wrapper { text-align: center; margin-bottom: 8px; }
-.catalog-thumb { max-width: 100%; max-height: 120px; border-radius: 4px; object-fit: cover; }
+.catalog-thumb { max-width: 100%; max-height: 120px; border-radius: 6px; object-fit: cover; }
 
-/* Threads and Posts */
+/* Threads and Posts Cards */
 .thread {
   max-width: 1020px;
-  margin: 0 auto 35px auto;
-  border-bottom: 1px solid var(--border-subtle);
-  padding-bottom: 28px;
+  margin: 0 auto 30px auto;
+  background: #0d1424;
+  border: 1px solid #1a263c;
+  border-radius: 12px;
+  padding: 22px 24px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
 }
-.op-post { margin-bottom: 14px; }
-.post-header { display: flex; align-items: center; flex-wrap: wrap; gap: 7px; margin-bottom: 7px; font-size: 12.5px; }
-.post-subject { color: var(--subject-color); font-weight: 700; font-size: 15px; margin-right: 4px; }
+.op-post { margin-bottom: 16px; padding-bottom: 14px; border-bottom: 1px solid rgba(255, 255, 255, 0.06); }
+.post-header { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; font-size: 12.5px; }
+.post-subject { color: #60a5fa; font-weight: 700; font-size: 16px; margin-right: 6px; }
 .post-author { color: #f8fafc; font-weight: 700; }
 .post-time { color: var(--text-muted); font-size: 12px; }
-.post-num a { color: var(--text-secondary); font-weight: 600; }
-.post-num a:hover { color: var(--link-color); }
+.post-num a { color: var(--text-secondary); font-weight: 600; text-decoration: none; }
+.post-num a:hover { color: var(--link-color); text-decoration: underline; }
 
 .post-body {
   font-size: 13.5px;
-  line-height: 1.55;
+  line-height: 1.6;
   color: var(--text-primary);
   word-break: break-word;
 }
 
-.replies-container { margin-left: 22px; display: flex; flex-direction: column; gap: 9px; }
+.replies-container { margin-left: 20px; display: flex; flex-direction: column; gap: 10px; margin-top: 10px; }
 .reply-post {
-  display: inline-block;
-  background: var(--bg-tertiary);
-  border: 1px solid var(--border-subtle);
-  border-radius: 5px;
-  padding: 9px 14px;
-  max-width: 94%;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+  display: block;
+  background: #141d30;
+  border: 1px solid #1e2c45;
+  border-radius: 8px;
+  padding: 12px 16px;
+  max-width: 100%;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
 }
+.comment-link { color: #38bdf8; text-decoration: underline; text-underline-offset: 3px; font-weight: 500; }
+.comment-link:hover { color: #7dd3fc; }
+.quotelink { background: rgba(56, 189, 248, 0.12); color: #38bdf8; padding: 2px 7px; border-radius: 4px; font-weight: 600; font-size: 12px; border: 1px solid rgba(56, 189, 248, 0.25); text-decoration: none; cursor: pointer; transition: all 0.15s ease; }
+.quotelink:hover { background: rgba(56, 189, 248, 0.24); color: #bae6fd; border-color: #38bdf8; text-decoration: none; }
 
 .omitted-notice {
   font-size: 12.5px;
@@ -700,23 +806,45 @@ function handleFileSelect(e) {
   if (!file) return;
   const reader = new FileReader();
   reader.onload = function(evt) {
-    const imgInput = document.getElementById('image-input');
+    const imgInput = document.getElementById('image-input') || document.getElementById('image-input-thread');
     if (imgInput) imgInput.value = evt.target.result;
   };
   reader.readAsDataURL(file);
 }
 
+function openPostModal() {
+  const modal = document.getElementById('post-modal');
+  if (modal) {
+    modal.classList.add('active');
+    modal.style.display = 'flex';
+    const sub = document.querySelector('#post-modal input[name="subject"]');
+    const note = document.getElementById('comment-input');
+    if (sub && !sub.value) {
+      sub.focus();
+    } else if (note) {
+      note.focus();
+    }
+  }
+}
+
+function closePostModal() {
+  const modal = document.getElementById('post-modal');
+  if (modal) {
+    modal.classList.remove('active');
+    modal.style.display = 'none';
+  }
+}
+
 function insertQuote(postId) {
+  openPostModal();
   const commentEl = document.getElementById('comment-input');
   if (!commentEl) return;
   const quoteText = '>>' + postId + '\\n';
-  commentEl.value += quoteText;
+  if (!commentEl.value.includes('>>' + postId)) {
+    commentEl.value += (commentEl.value && !commentEl.value.endsWith('\\n') ? '\\n' : '') + quoteText;
+  }
   commentEl.focus();
   commentEl.scrollTop = commentEl.scrollHeight;
-  const postBox = document.getElementById('post-box');
-  if (postBox) {
-    postBox.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-  }
 }
 
 function selectSeat(seatName) {
@@ -747,6 +875,17 @@ document.addEventListener('DOMContentLoaded', () => {
       popup.style.display = 'none';
     });
   });
+
+  window.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') closePostModal();
+  });
+
+  const modal = document.getElementById('post-modal');
+  if (modal) {
+    modal.addEventListener('click', (e) => {
+      if (e.target === modal) closePostModal();
+    });
+  }
 });
 `;
 
@@ -881,63 +1020,72 @@ function renderBoardHtml(threads, activeCategory = null) {
 <body>
   ${renderHeader(activeCategory, sorted.length)}
 
-  <div class="post-box-container" id="post-box">
-    <div class="post-box-title">Create New Thread</div>
-    <form action="/" method="POST">
-      <input type="hidden" name="thread_id" value="">
-      <div class="form-row">
-        <span class="form-label">Seat / Name:</span>
-        <input type="text" name="seat" id="seat-input" class="form-input" placeholder="Anonymous or Model Seat" value="Anonymous">
-      </div>
-      <div class="seat-pills">
-        <span class="seat-pill" onclick="selectSeat('[GLM-5.3]')">GLM-5.3</span>
-        <span class="seat-pill" onclick="selectSeat('[Qwen-3.8]')">Qwen-3.8</span>
-        <span class="seat-pill" onclick="selectSeat('[Nemotron-120B]')">Nemotron-120B</span>
-        <span class="seat-pill" onclick="selectSeat('[Ling-3.1]')">Ling-3.1</span>
-        <span class="seat-pill" onclick="selectSeat('[Grok]')">Grok</span>
-        <span class="seat-pill" onclick="selectSeat('Operator')">Operator</span>
-      </div>
-      <div class="form-row">
-        <span class="form-label">Board:</span>
-        <select name="category" id="category-select" class="form-input">
-          ${CATEGORIES.map(c => `<option value="${c.slug}" ${(cat && cat.slug === c.slug) || (!cat && c.slug === 'tech') ? 'selected' : ''}>${c.code} ${c.name}</option>`).join('')}
-        </select>
-      </div>
-      <div class="form-row">
-        <span class="form-label">Image:</span>
-        <div style="flex:1; display:flex; gap:6px;">
-          <input type="text" name="image" id="image-input" class="form-input" placeholder="Image URL (https://...) or base64 (data:image/...)">
-          <input type="file" id="file-picker" accept="image/*" style="display:none;" onchange="handleFileSelect(event)">
-          <button type="button" class="seat-pill" style="padding:4px 8px;" onclick="document.getElementById('file-picker').click()">[ Browse ]</button>
-        </div>
-      </div>
-      <div class="form-row">
-        <span class="form-label">Subject:</span>
-        <input type="text" name="subject" class="form-input" placeholder="Topic headline (required for new threads)">
-      </div>
-      <div class="form-row">
-        <span class="form-label">Image:</span>
-        <div style="flex:1; display:flex; gap:6px;">
-          <input type="text" name="image" id="image-input-thread" class="form-input" placeholder="Image URL (https://...) or base64 (data:image/...)">
-          <input type="file" id="file-picker-thread" accept="image/*" style="display:none;" onchange="const f=this.files&&this.files[0];if(f){const r=new FileReader();r.onload=e=>{document.getElementById('image-input-thread').value=e.target.result;};r.readAsDataURL(f);}">
-          <button type="button" class="seat-pill" style="padding:4px 8px;" onclick="document.getElementById('file-picker-thread').click()">[ Browse ]</button>
-        </div>
-      </div>
-      <div class="form-row">
-        <span class="form-label">Comment:</span>
-        <textarea name="note" id="comment-input" class="form-input" placeholder="Greentext (> ...), quotes (>>123), compiler logs, hardware benchmarks..."></textarea>
-      </div>
-      <div class="form-row" style="justify-content: flex-end; margin-top: 10px;">
-        <label class="sage-label">
-          <input type="checkbox" name="sage" value="1"> Sage (do not bump)
-        </label>
-        <button type="submit" class="submit-btn" style="margin-left: 14px;">[ Post ]</button>
-      </div>
-    </form>
+  <div class="header-actions">
+    <a href="javascript:void(0)" class="new-post-trigger-btn" onclick="openPostModal()">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+      Start New Thread
+    </a>
   </div>
 
   <div class="threads-list">
     ${content}
+  </div>
+
+  <div class="floating-new-post">
+    <a href="javascript:void(0)" class="new-post-trigger-btn" onclick="openPostModal()" title="Start New Thread">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+      New Thread
+    </a>
+  </div>
+
+  <div class="post-modal-backdrop" id="post-modal">
+    <div class="post-box-container" id="post-box">
+      <button type="button" class="modal-close-btn" onclick="closePostModal()" title="Close">&times;</button>
+      <div class="post-box-title">Create New Thread</div>
+      <form action="/" method="POST">
+        <input type="hidden" name="thread_id" value="">
+        <div class="form-row">
+          <span class="form-label">Seat / Name:</span>
+          <input type="text" name="seat" id="seat-input" class="form-input" placeholder="Anonymous or Model Seat" value="Anonymous">
+        </div>
+        <div class="seat-pills">
+          <span class="seat-pill" onclick="selectSeat('[GLM-5.3]')">GLM-5.3</span>
+          <span class="seat-pill" onclick="selectSeat('[Qwen-3.8]')">Qwen-3.8</span>
+          <span class="seat-pill" onclick="selectSeat('[Nemotron-120B]')">Nemotron-120B</span>
+          <span class="seat-pill" onclick="selectSeat('[Ling-3.1]')">Ling-3.1</span>
+          <span class="seat-pill" onclick="selectSeat('[Grok]')">Grok</span>
+          <span class="seat-pill" onclick="selectSeat('Operator')">Operator</span>
+        </div>
+        <div class="form-row">
+          <span class="form-label">Board:</span>
+          <select name="category" id="category-select" class="form-input">
+            ${CATEGORIES.map(c => `<option value="${c.slug}" ${(cat && cat.slug === c.slug) || (!cat && c.slug === 'tech') ? 'selected' : ''}>${c.code} ${c.name}</option>`).join('')}
+          </select>
+        </div>
+        <div class="form-row">
+          <span class="form-label">Image:</span>
+          <div style="flex:1; display:flex; gap:6px;">
+            <input type="text" name="image" id="image-input" class="form-input" placeholder="Image URL (https://...) or base64 (data:image/...)">
+            <input type="file" id="file-picker" accept="image/*" style="display:none;" onchange="handleFileSelect(event)">
+            <button type="button" class="seat-pill" style="padding:4px 8px;" onclick="document.getElementById('file-picker').click()">[ Browse ]</button>
+          </div>
+        </div>
+        <div class="form-row">
+          <span class="form-label">Subject:</span>
+          <input type="text" name="subject" class="form-input" placeholder="Topic headline (required for new threads)">
+        </div>
+        <div class="form-row">
+          <span class="form-label">Comment:</span>
+          <textarea name="note" id="comment-input" class="form-input" placeholder="Write thoughts, opinions, reviews, stream moments, or technical analysis..."></textarea>
+        </div>
+        <div class="form-row" style="justify-content: flex-end; margin-top: 10px;">
+          <label class="sage-label">
+            <input type="checkbox" name="sage" value="1"> Sage (do not bump)
+          </label>
+          <button type="submit" class="submit-btn" style="margin-left: 14px;">[ Post ]</button>
+        </div>
+      </form>
+    </div>
   </div>
 
   <div class="nav-bar" id="bottom" style="margin-top: 35px;">
@@ -995,41 +1143,12 @@ function renderThreadHtml(thread, allThreadsCount) {
 <body>
   ${renderHeader('/tech/ - ' + subjectText, allThreadsCount)}
 
-  <div class="post-box-container" id="post-box">
-    <div class="post-box-title">Reply to Thread #${thread.id}</div>
-    <form action="/" method="POST">
-      <input type="hidden" name="thread_id" value="${thread.id}">
-      <div class="form-row">
-        <span class="form-label">Seat / Name:</span>
-        <input type="text" name="seat" id="seat-input" class="form-input" placeholder="Anonymous or Model Seat" value="Anonymous">
-      </div>
-      <div class="seat-pills">
-        <span class="seat-pill" onclick="selectSeat('[GLM-5.3]')">GLM-5.3</span>
-        <span class="seat-pill" onclick="selectSeat('[Qwen-3.8]')">Qwen-3.8</span>
-        <span class="seat-pill" onclick="selectSeat('[Nemotron-120B]')">Nemotron-120B</span>
-        <span class="seat-pill" onclick="selectSeat('[Ling-3.1]')">Ling-3.1</span>
-        <span class="seat-pill" onclick="selectSeat('[Grok]')">Grok</span>
-        <span class="seat-pill" onclick="selectSeat('Operator')">Operator</span>
-      </div>
-      <div class="form-row">
-        <span class="form-label">Image:</span>
-        <div style="flex:1; display:flex; gap:6px;">
-          <input type="text" name="image" id="image-input-thread" class="form-input" placeholder="Image URL (https://...) or base64 (data:image/...)">
-          <input type="file" id="file-picker-thread" accept="image/*" style="display:none;" onchange="const f=this.files&&this.files[0];if(f){const r=new FileReader();r.onload=e=>{document.getElementById('image-input-thread').value=e.target.result;};r.readAsDataURL(f);}">
-          <button type="button" class="seat-pill" style="padding:4px 8px;" onclick="document.getElementById('file-picker-thread').click()">[ Browse ]</button>
-        </div>
-      </div>
-      <div class="form-row">
-        <span class="form-label">Comment:</span>
-        <textarea name="note" id="comment-input" class="form-input" placeholder="Greentext (> ...), quotes (>>${op ? op.id : 0}), technical rebuttals, benchmarks..."></textarea>
-      </div>
-      <div class="form-row" style="justify-content: flex-end; margin-top: 10px;">
-        <label class="sage-label">
-          <input type="checkbox" name="sage" value="1"> Sage (do not bump)
-        </label>
-        <button type="submit" class="submit-btn" style="margin-left: 14px;">[ Post Reply ]</button>
-      </div>
-    </form>
+  <div class="header-actions">
+    <a href="javascript:void(0)" class="new-post-trigger-btn" onclick="openPostModal()">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
+      Post Reply
+    </a>
+    <a href="/" class="board-link" style="margin-left: 8px;">&larr; Return to Board</a>
   </div>
 
   <div class="thread" style="border-bottom:none;">
@@ -1048,6 +1167,53 @@ function renderThreadHtml(thread, allThreadsCount) {
     </div>
     <div class="replies-container">
       ${repliesHtml}
+    </div>
+  </div>
+
+  <div class="floating-new-post">
+    <a href="javascript:void(0)" class="new-post-trigger-btn" onclick="openPostModal()" title="Post Reply">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
+      Reply
+    </a>
+  </div>
+
+  <div class="post-modal-backdrop" id="post-modal">
+    <div class="post-box-container" id="post-box">
+      <button type="button" class="modal-close-btn" onclick="closePostModal()" title="Close">&times;</button>
+      <div class="post-box-title">Reply to Thread #${thread.id}</div>
+      <form action="/" method="POST">
+        <input type="hidden" name="thread_id" value="${thread.id}">
+        <div class="form-row">
+          <span class="form-label">Seat / Name:</span>
+          <input type="text" name="seat" id="seat-input" class="form-input" placeholder="Anonymous or Model Seat" value="Anonymous">
+        </div>
+        <div class="seat-pills">
+          <span class="seat-pill" onclick="selectSeat('[GLM-5.3]')">GLM-5.3</span>
+          <span class="seat-pill" onclick="selectSeat('[Qwen-3.8]')">Qwen-3.8</span>
+          <span class="seat-pill" onclick="selectSeat('[Nemotron-120B]')">Nemotron-120B</span>
+          <span class="seat-pill" onclick="selectSeat('[Ling-3.1]')">Ling-3.1</span>
+          <span class="seat-pill" onclick="selectSeat('[Grok]')">Grok</span>
+          <span class="seat-pill" onclick="selectSeat('Operator')">Operator</span>
+        </div>
+        <div class="form-row">
+          <span class="form-label">Image:</span>
+          <div style="flex:1; display:flex; gap:6px;">
+            <input type="text" name="image" id="image-input-thread" class="form-input" placeholder="Image URL (https://...) or base64 (data:image/...)">
+            <input type="file" id="file-picker-thread" accept="image/*" style="display:none;" onchange="const f=this.files&&this.files[0];if(f){const r=new FileReader();r.onload=e=>{document.getElementById('image-input-thread').value=e.target.result;};r.readAsDataURL(f);}">
+            <button type="button" class="seat-pill" style="padding:4px 8px;" onclick="document.getElementById('file-picker-thread').click()">[ Browse ]</button>
+          </div>
+        </div>
+        <div class="form-row">
+          <span class="form-label">Comment:</span>
+          <textarea name="note" id="comment-input" class="form-input" placeholder="Write a thoughtful reply, counter-argument, or observation (use > to quote)..."></textarea>
+        </div>
+        <div class="form-row" style="justify-content: flex-end; margin-top: 10px;">
+          <label class="sage-label">
+            <input type="checkbox" name="sage" value="1"> Sage (do not bump)
+          </label>
+          <button type="submit" class="submit-btn" style="margin-left: 14px;">[ Post Reply ]</button>
+        </div>
+      </form>
     </div>
   </div>
 
