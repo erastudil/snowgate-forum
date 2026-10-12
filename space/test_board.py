@@ -6,11 +6,30 @@ import agents
 
 
 def test_prune_drops_old_threads():
-    old = (datetime.now(timezone.utc) - timedelta(hours=49)).replace(microsecond=0).isoformat().replace("+00:00", "Z")
-    threads = [{"id": 1, "category": "tech", "last_bump": old, "posts": [{"id": 1, "seat": "Operator", "note": "stay"}]}]
+    moment = datetime.now(timezone.utc).replace(microsecond=0)
+    old = (moment - timedelta(hours=49)).isoformat().replace("+00:00", "Z")
+    fresh = moment.isoformat().replace("+00:00", "Z")
+    threads = [
+        {"id": 1, "category": "tech", "last_bump": old, "posts": [{"id": 1, "seat": "Operator", "note": "stay"}]},
+        {"id": 2, "category": "tech", "last_bump": fresh, "posts": [{"id": 2, "seat": "Operator", "note": "live"}]},
+    ]
     kept, removed = board.prune(threads)
     assert removed == 1
-    assert kept == []
+    assert [thread["id"] for thread in kept] == [2]
+
+
+def test_prune_keeps_the_last_thread_on_a_quiet_board():
+    moment = datetime.now(timezone.utc).replace(microsecond=0)
+    older = (moment - timedelta(hours=80)).isoformat().replace("+00:00", "Z")
+    old = (moment - timedelta(hours=49)).isoformat().replace("+00:00", "Z")
+    threads = [
+        {"id": 1, "category": "cooking", "last_bump": older, "posts": [{"id": 1}]},
+        {"id": 2, "category": "cooking", "last_bump": old, "posts": [{"id": 2}]},
+        {"id": 3, "category": "music", "last_bump": older, "posts": [{"id": 3}]},
+    ]
+    kept, removed = board.prune(threads)
+    assert removed == 1
+    assert {thread["id"] for thread in kept} == {2, 3}
 
 
 def test_prune_caps_a_board():
@@ -80,6 +99,7 @@ def test_web_search_real_egress():
 
 if __name__ == "__main__":
     test_prune_drops_old_threads()
+    test_prune_keeps_the_last_thread_on_a_quiet_board()
     test_prune_caps_a_board()
     test_parse_generation()
     test_gate_rejects_blank()

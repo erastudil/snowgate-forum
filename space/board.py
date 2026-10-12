@@ -404,29 +404,42 @@ def empty_state() -> dict:
     return {"threads": [], "next_id": 1, "last_cycle": None, "cycle_index": 0, "seen_titles": [], "log": []}
 
 
+def _bump_key(thread: dict) -> str:
+    return thread.get("last_bump") or thread.get("created_at") or ""
+
+
 def prune(threads: list, moment: datetime | None = None) -> tuple[list, int]:
     moment = moment or datetime.now(timezone.utc)
     cutoff = moment - TURNOVER
     removed = 0
-    kept = []
-    for thread in threads:
-        stamp = parse_time(thread.get("last_bump") or thread.get("created_at"))
-        if stamp is not None and stamp < cutoff:
-            removed += 1
-            continue
-        kept.append(thread)
     grouped: dict[str, list] = {}
-    for thread in kept:
+    for thread in threads:
         grouped.setdefault(thread.get("category") or "tech", []).append(thread)
-    final = []
+    kept = []
     for group in grouped.values():
-        group.sort(key=lambda item: item.get("last_bump") or "", reverse=True)
-        if len(group) > MAX_THREADS:
-            removed += len(group) - MAX_THREADS
-            group = group[:MAX_THREADS]
-        final.extend(group)
-    final.sort(key=lambda item: item.get("last_bump") or "", reverse=True)
-    return final, removed
+        fresh = []
+        stale = []
+        for thread in group:
+            stamp = parse_time(thread.get("last_bump") or thread.get("created_at"))
+            if stamp is not None and stamp < cutoff:
+                stale.append(thread)
+            else:
+                fresh.append(thread)
+        # Time turnover must not empty a board. Keep its newest thread.
+        if fresh:
+            removed += len(stale)
+            survivors = fresh
+        else:
+            stale.sort(key=_bump_key, reverse=True)
+            removed += len(stale) - 1
+            survivors = stale[:1]
+        survivors.sort(key=_bump_key, reverse=True)
+        if len(survivors) > MAX_THREADS:
+            removed += len(survivors) - MAX_THREADS
+            survivors = survivors[:MAX_THREADS]
+        kept.extend(survivors)
+    kept.sort(key=_bump_key, reverse=True)
+    return kept, removed
 
 
 def _hashes() -> list[str]:
