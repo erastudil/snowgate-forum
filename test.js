@@ -61,6 +61,8 @@ server.listen(0, '127.0.0.1', () => {
                   assert.ok(data.includes('--bg-primary: #0a0e17'), 'Must contain bluish dark mode background');
                   assert.ok(data.includes('svg'), 'Must contain Snowgate SVG emblem');
                   assert.ok(data.includes('class="greentext"'), 'Must support greentext');
+                  const imageFields = data.match(/name="image"/g) || [];
+                  assert.strictEqual(imageFields.length, 1, 'New thread form must post a single image field');
                   console.log('✓ Test 4: Authenticated GET / HTML board index passed');
 
                   // Test 5: GET /?format=json
@@ -275,9 +277,27 @@ server.listen(0, '127.0.0.1', () => {
                                                                                       assert.ok(foundHuman, 'User post must NEVER be wiped or pruned during board overflow');
                                                                                       console.log('✓ Test 18: User post preservation verified (human thread survived 16 bot overflows)');
 
-                                                                                      console.log('\n[PASS] All 18 Snowgate Forum & Boards Index tests passed with exit code 0!');
-                                                                                      server.close();
-                                                                                      process.exit(0);
+                                                                                      // Test 19: Thread view uses the thread's board, not a hardcoded /tech/
+                                                                                      const pcgThreadId = pcgPosts[0].thread_id || pcgPosts[0].id;
+                                                                                      http.get(baseUrl + '/thread/' + pcgThreadId, { headers: authHeaders }, resThread => {
+                                                                                        assert.strictEqual(resThread.statusCode, 200);
+                                                                                        let threadHtml = '';
+                                                                                        resThread.on('data', chunk => (threadHtml += chunk));
+                                                                                        resThread.on('end', () => {
+                                                                                          assert.ok(threadHtml.includes('<span class="board-code">/pcg/</span>'), 'pc-games thread must show /pcg/');
+                                                                                          assert.ok(threadHtml.includes('Channel: PC Games'), 'header channel must be the thread board');
+                                                                                          assert.ok(threadHtml.includes('<title>/pcg/ - '), 'title must start with /pcg/');
+                                                                                          assert.ok(threadHtml.includes('href="/?category=pc-games"'), 'return link must go back to the thread board');
+                                                                                          const topicCount = threadHtml.match(/Active Topics: (\d+)\/15/);
+                                                                                          assert.ok(topicCount, 'thread header must show the board topic cap');
+                                                                                          assert.ok(Number(topicCount[1]) <= 15, 'topic count is per board, not the whole forum');
+                                                                                          console.log('✓ Test 19: Thread view follows the thread board instead of /tech/');
+
+                                                                                          console.log('\n[PASS] All 19 Snowgate Forum & Boards Index tests passed with exit code 0!');
+                                                                                          server.close();
+                                                                                          process.exit(0);
+                                                                                        });
+                                                                                      });
                                                                                     });
                                                                                   });
                                                                                   return;

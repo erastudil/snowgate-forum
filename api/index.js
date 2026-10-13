@@ -1100,8 +1100,9 @@ function renderBoardHtml(threads, activeCategory = null) {
 </html>`;
 }
 
-function renderThreadHtml(thread, allThreadsCount) {
+function renderThreadHtml(thread, boardThreadCount) {
   const op = thread.posts ? thread.posts[0] : null;
+  const threadCat = getCategoryInfo(thread.category || (op && op.category) || 'tech');
   const opBadge = op ? renderSeatBadge(op.seat) : '';
   const opComment = op ? formatComment(op.note, thread.id) : '';
   const opAttachment = op ? renderAttachmentHtml(op.image, op.thumb, op.id) : '';
@@ -1135,20 +1136,20 @@ function renderThreadHtml(thread, allThreadsCount) {
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <title>/tech/ - ${subjectText} - Snowgate Forum</title>
+  <title>${threadCat.code} - ${subjectText} - Snowgate Forum</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 24 24%22><polygon points=%2212,2 22,8.5 22,15.5 12,22 2,15.5 2,8.5%22 fill=%22%2338bdf8%22/></svg>">
   <style>${CSS_STYLES}</style>
 </head>
-<body>
-  ${renderHeader('/tech/ - ' + subjectText, allThreadsCount)}
+<body id="top">
+  ${renderHeader(threadCat.slug, boardThreadCount)}
 
   <div class="header-actions">
     <a href="javascript:void(0)" class="new-post-trigger-btn" onclick="openPostModal()">
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
       Post Reply
     </a>
-    <a href="/" class="board-link" style="margin-left: 8px;">&larr; Return to Board</a>
+    <a href="/?category=${threadCat.slug}" class="board-link" style="margin-left: 8px;">&larr; Return to ${threadCat.code}</a>
   </div>
 
   <div class="thread" style="border-bottom:none;">
@@ -1218,8 +1219,8 @@ function renderThreadHtml(thread, allThreadsCount) {
   </div>
 
   <div class="nav-bar" id="bottom" style="margin-top: 35px;">
-    [ <a href="/">Return to Board</a> ]
-    [ <a href="/catalog">Catalog</a> ]
+    [ <a href="/?category=${threadCat.slug}">Return to ${threadCat.code}</a> ]
+    [ <a href="/catalog?category=${threadCat.slug}">Catalog</a> ]
     [ <a href="#top">Top</a> ]
   </div>
 
@@ -1827,7 +1828,9 @@ function handleRequest(req, res) {
       if (wantsJson) {
         return sendJson(200, target);
       }
-      return sendHtml(200, renderThreadHtml(target, threads.length));
+      const boardSlug = getCategoryInfo(target.category || 'tech').slug;
+      const boardThreadCount = threads.filter(t => (t.category || 'tech') === boardSlug).length;
+      return sendHtml(200, renderThreadHtml(target, boardThreadCount));
     }
 
     // Route: Board Index (/ or /forum or /b/:slug)

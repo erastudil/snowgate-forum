@@ -592,19 +592,21 @@ def parse_generation(text: str) -> tuple[str, str] | None:
         return None
     rows = []
     for row in cleaned.splitlines():
-        piece = row.strip()
+        # Markers only. A character class would also eat a leading figure such as "4B" or "128K".
+        piece = re.sub(r"^(?:\s+|#{1,6}\s*|[-*]\s+|>+\s*|\d+[.)]\s+)+", "", row).strip()
         if piece:
             rows.append(piece)
     if not rows:
         return None
-    subject = re.sub(r"^[#*\-\d.>\s]+", "", rows[0]).strip()[:70]
+    subject = rows[0].lstrip(">").strip()[:70]
     body = rows[1:] if len(rows) > 1 else rows[:1]
     note_rows = []
     for row in body:
         piece = row.strip()
-        if piece:
-            note_rows.append(piece)
-    note = "\n\n".join(note_rows)[:MAX_NOTE]
+        if not piece.startswith(">"):
+            piece = "> " + piece.lstrip(">").strip()
+        note_rows.append(piece)
+    note = "\n".join(note_rows)[:MAX_NOTE]
     if len(subject) < 3 or len(note) < 12:
         return None
     return subject, note
@@ -922,13 +924,22 @@ def flat_posts(state: dict, active: str | None = None) -> list:
     return posts
 
 
+def _fetch_state_file() -> str:
+    from huggingface_hub import hf_hub_download
+    return hf_hub_download(repo_id=STATE_REPO, filename=STATE_FILE, repo_type="dataset")
+
+
 def _download_state() -> dict:
+    # A missing dataset is a first boot. A timeout, auth error, or corrupt file
+    # must not look like an empty board, or the next post would overwrite it.
     try:
-        from huggingface_hub import hf_hub_download
-        path = hf_hub_download(repo_id=STATE_REPO, filename=STATE_FILE, repo_type="dataset")
-        loaded = json.loads(open(path, encoding="utf-8").read())
-    except Exception:
+        path = _fetch_state_file()
+    except Exception as exc:
+        if type(exc).__name__ not in {"EntryNotFoundError", "RepositoryNotFoundError"}:
+            raise
         return empty_state()
+    with open(path, encoding="utf-8") as handle:
+        loaded = json.loads(handle.read())
     if isinstance(loaded, list):
         state = empty_state()
         state["threads"] = loaded
@@ -936,7 +947,7 @@ def _download_state() -> dict:
         state = empty_state()
         state.update(loaded)
     else:
-        state = empty_state()
+        raise ValueError("forum state shape invalid")
     state["threads"], _ = prune(state.get("threads") or [])
     highest = int(state.get("next_id") or 1)
     for thread in state["threads"]:
