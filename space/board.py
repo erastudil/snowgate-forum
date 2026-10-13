@@ -340,11 +340,33 @@ footer.meta { color: var(--text-muted); font-size: 12px; font-family: monospace;
 LOGO = '<svg width="26" height="26" viewBox="0 0 24 24" aria-hidden="true" style="vertical-align:middle;"><polygon points="12,2 22,8.5 22,15.5 12,22 2,15.5 2,8.5" fill="#38bdf8"/></svg>'
 
 MODAL_JS = """
-function openPostModal() {
+function applyComposerTarget(threadId) {
+  var id = parseInt(threadId, 10) || 0;
+  var hidden = document.querySelector('#post-modal input[name="thread_id"]');
+  if (hidden) hidden.value = String(id);
+  var title = document.querySelector('#post-modal .post-box-title');
+  var btn = document.querySelector('#post-modal .submit-btn');
+  var subject = document.querySelector('#post-modal input[name="subject"]');
+  var subjectRow = subject ? subject.parentElement : null;
+  if (id) {
+    if (title) title.textContent = 'Reply to Thread #' + id;
+    if (btn) btn.textContent = '[ Post Reply ]';
+    if (subjectRow) subjectRow.style.display = 'none';
+  } else {
+    if (title) title.textContent = 'Start New Discussion Thread';
+    if (btn) btn.textContent = '[ Create Thread ]';
+    if (subjectRow) subjectRow.style.display = '';
+  }
+}
+function openPostModal(threadId) {
   var m = document.getElementById('post-modal');
   if (m) m.style.display = 'flex';
+  if (threadId !== undefined) applyComposerTarget(threadId);
+  var subject = document.querySelector('#post-modal input[name="subject"]');
+  var subjectHidden = subject && subject.parentElement && subject.parentElement.style.display === 'none';
   var ci = document.getElementById('comment-input');
-  if (ci) ci.focus();
+  if (subject && !subjectHidden && !subject.value) subject.focus();
+  else if (ci) ci.focus();
 }
 function closePostModal() {
   var m = document.getElementById('post-modal');
@@ -354,8 +376,9 @@ function selectSeat(seatName) {
   var s = document.getElementById('seat-input');
   if (s) s.value = seatName;
 }
-function insertQuote(postId) {
-  openPostModal();
+function insertQuote(postId, threadId) {
+  if (threadId) openPostModal(threadId);
+  else openPostModal();
   var ci = document.getElementById('comment-input');
   if (!ci) return;
   var q = '>>' + postId + '\\n';
@@ -512,7 +535,19 @@ def escape(value) -> str:
     return html.escape(str(value if value is not None else ""), quote=True)
 
 
-def format_note(note: str) -> str:
+def format_note(note: str, thread_id: int = 0, in_thread: bool = False) -> str:
+    if thread_id and not in_thread:
+        quote_link = f'<a href="/thread/{int(thread_id)}#p\\1" class="quotelink">&gt;&gt;\\1</a>'
+    elif thread_id:
+        quote_link = (
+            f'<a href="#p\\1" class="quotelink" '
+            f'onclick="if(typeof insertQuote===\'function\')insertQuote(\\1, {int(thread_id)})">&gt;&gt;\\1</a>'
+        )
+    else:
+        quote_link = (
+            '<a href="#p\\1" class="quotelink" '
+            'onclick="if(typeof insertQuote===\'function\')insertQuote(\\1)">&gt;&gt;\\1</a>'
+        )
     lines = []
     for line in str(note or "").splitlines():
         safe = escape(line)
@@ -523,11 +558,7 @@ def format_note(note: str) -> str:
             safe,
         )
         # Format quotelinks >>123
-        safe = re.sub(
-            r"&gt;&gt;(\d+)",
-            r'<a href="#p\1" class="quotelink" onclick="if(typeof insertQuote===\'function\')insertQuote(\1)">&gt;&gt;\1</a>',
-            safe,
-        )
+        safe = re.sub(r"&gt;&gt;(\d+)", quote_link, safe)
         if line.startswith(">") and not line.startswith(">>"):
             lines.append(f'<p class="greentext">{safe}</p>')
         else:
@@ -680,11 +711,13 @@ def gate_page(error: str = "") -> str:
     return shell("Snowgate Gateway", body)
 
 
-def render_post(post: dict, reply_link: str = "") -> str:
+def render_post(post: dict, reply_link: str = "", thread_id: int = 0, in_thread: bool = False) -> str:
     sage_tag = ' <span style="color:var(--sage-color);font-size:11px;font-weight:700;">[SAGE]</span>' if post.get("sage") else ""
     rep_btn = f' &bull; <a href="{escape(reply_link)}" class="quotelink" style="font-size:11.5px;">reply</a>' if reply_link else ""
     badge = seat_badge(post.get("seat") or "Anonymous")
     post_id = int(post.get("id") or 0)
+    owner = int(thread_id or post.get("thread_id") or 0)
+    quote_call = f"insertQuote({post_id}, {owner})" if owner else f"insertQuote({post_id})"
     subject_html = f'<div class="post-subject">{escape(post.get("subject") or "")}</div>' if post.get("subject") else ""
 
     return f"""<article class="post" id="p{post_id}">
@@ -692,13 +725,13 @@ def render_post(post: dict, reply_link: str = "") -> str:
   {badge}
   <span class="post-author">{escape(post.get("seat") or "Anonymous")}</span>
   <span class="post-time">{escape(post.get("time") or "")}</span>
-  <span class="post-num"><a href="javascript:void(0)" onclick="insertQuote({post_id})">No.{post_id}</a></span>
+  <span class="post-num"><a href="javascript:void(0)" onclick="{quote_call}">No.{post_id}</a></span>
   {sage_tag}
   {rep_btn}
 </div>
 {subject_html}
 <div class="post-body">
-  {format_note(post.get("note") or "")}
+  {format_note(post.get("note") or "", owner, in_thread)}
 </div>
 </article>"""
 
@@ -725,7 +758,9 @@ def board_page(state: dict, active: str | None = None) -> str:
         if omitted > 0:
             omitted_html = f'<div style="font-size:12.5px;color:var(--text-secondary);font-style:italic;margin:6px 0 8px 10px;">{omitted} replies omitted. <a href="/thread/{thread["id"]}">Click here to view full thread</a>.</div>'
 
-        reply_blocks = "".join(f'<div class="reply-post">{render_post(p)}</div>' for p in shown_replies)
+        reply_blocks = "".join(
+            f'<div class="reply-post">{render_post(p, thread_id=int(thread["id"]))}</div>' for p in shown_replies
+        )
         replies_container = f'<div class="replies-box">{omitted_html}{reply_blocks}</div>' if shown_replies else ""
 
         cat = category(thread.get("category"))
@@ -735,7 +770,7 @@ def board_page(state: dict, active: str | None = None) -> str:
             <span class="tag" style="background:rgba(56,189,248,0.12);padding:2px 8px;border-radius:4px;border:1px solid rgba(56,189,248,0.25);font-weight:700;">{escape(cat["code"])} {escape(cat["name"])}</span>
             <span style="font-size:12.5px;">[ <a href="/thread/{thread['id']}">View Thread ({len(posts)} posts)</a> ]</span>
           </div>
-          {render_post(op)}
+          {render_post(op, thread_id=int(thread["id"]))}
           {replies_container}
         </section>
         """)
@@ -749,7 +784,7 @@ def board_page(state: dict, active: str | None = None) -> str:
         <p class="meta" style="margin-top:2px;">{escape(info['desc'])}</p>
       </div>
       <div>
-        <a href="javascript:void(0)" class="new-post-trigger-btn" onclick="openPostModal()">
+        <a href="javascript:void(0)" class="new-post-trigger-btn" onclick="openPostModal(0)">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
           Start New Thread
         </a>
@@ -759,7 +794,7 @@ def board_page(state: dict, active: str | None = None) -> str:
 
     floating_btn = """
     <div class="floating-new-post">
-      <a href="javascript:void(0)" class="new-post-trigger-btn" onclick="openPostModal()" title="Start New Thread">
+      <a href="javascript:void(0)" class="new-post-trigger-btn" onclick="openPostModal(0)" title="Start New Thread">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
         New Thread
       </a>
@@ -776,8 +811,11 @@ def thread_page(state: dict, thread: dict) -> str:
     op = posts[0] if posts else {}
     replies = posts[1:] if len(posts) > 1 else []
 
-    op_html = f'<div class="thread-card">{render_post(op)}</div>' if op else ""
-    replies_html = "".join(f'<div class="thread-card" style="margin-left:14px;background:#141d30;">{render_post(p)}</div>' for p in replies)
+    op_html = f'<div class="thread-card">{render_post(op, thread_id=int(thread["id"]), in_thread=True)}</div>' if op else ""
+    replies_html = "".join(
+        f'<div class="thread-card" style="margin-left:14px;background:#141d30;">{render_post(p, thread_id=int(thread["id"]), in_thread=True)}</div>'
+        for p in replies
+    )
 
     cat = category(thread.get("category"))
     actions = f"""

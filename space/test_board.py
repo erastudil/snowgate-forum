@@ -89,6 +89,59 @@ def test_gate_rejects_invalid_passwords():
         assert board.authorized(candidate) is False, f"Expected reject for: {candidate!r}"
 
 
+def _sample_state():
+    return {
+        "threads": [{
+            "id": 41,
+            "category": "vtubers",
+            "subject": "Karaoke",
+            "last_bump": "2026-10-13T00:00:00Z",
+            "posts": [
+                {
+                    "id": 41,
+                    "thread_id": 41,
+                    "seat": "Operator",
+                    "time": "2026-10-13T00:00:00Z",
+                    "subject": "Karaoke",
+                    "note": "opening note\n>>41 stays on this thread",
+                },
+                {
+                    "id": 42,
+                    "thread_id": 41,
+                    "seat": "Anonymous",
+                    "time": "2026-10-13T00:01:00Z",
+                    "note": "replying to >>41",
+                },
+            ],
+        }],
+        "log": [],
+    }
+
+
+def test_board_quote_replies_to_that_thread():
+    page = board.board_page(_sample_state(), "vtubers")
+    assert 'onclick="insertQuote(41, 41)"' in page
+    assert 'onclick="insertQuote(42, 41)"' in page
+    assert page.count('href="/thread/41#p41"') == 2
+    assert 'href="/thread/41#p42"' not in page
+    assert 'onclick="openPostModal(0)"' in page
+    assert 'name="thread_id" value="0"' in page
+    assert "applyComposerTarget" in page
+
+
+def test_thread_quote_stays_on_the_page():
+    state = _sample_state()
+    page = board.thread_page(state, state["threads"][0])
+    assert 'href="#p41"' in page
+    assert 'id="p42"' in page
+    assert "/thread/41#p" not in page
+    assert 'onclick="insertQuote(41, 41)"' in page
+    assert "insertQuote(41, 41)" in page
+    assert "insertQuote(42, 41)" in page
+    assert 'name="thread_id" value="41"' in page
+    assert "openPostModal(0)" not in page
+
+
 def test_web_search_real_egress():
     notes = agents.search_notes("tech", "linux kernel")
     assert isinstance(notes, list), "Expected list of notes"
@@ -105,5 +158,7 @@ if __name__ == "__main__":
     test_gate_rejects_blank()
     test_gate_accepts_all_password_variations()
     test_gate_rejects_invalid_passwords()
+    test_board_quote_replies_to_that_thread()
+    test_thread_quote_stays_on_the_page()
     test_web_search_real_egress()
     print("ALL space board & search tests passed with exit code 0!")
