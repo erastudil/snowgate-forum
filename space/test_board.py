@@ -232,6 +232,38 @@ def test_board_quote_replies_to_that_thread():
     assert "applyComposerTarget" in page
 
 
+def test_catalog_stays_on_the_board():
+    state = {
+        "threads": [
+            {"id": 1, "category": "cooking", "subject": "Broth", "last_bump": "2026-10-13T00:00:00Z", "posts": [{"id": 1}]},
+            {"id": 2, "category": "music", "subject": "Synth", "last_bump": "2026-10-13T00:00:00Z", "posts": [{"id": 2}]},
+        ],
+        "log": [],
+    }
+    page = board.catalog_page(state, "ck")
+    assert "Broth" in page
+    assert "Synth" not in page
+    assert "<title>/ck/ Catalog · Snowgate</title>" in page
+    assert 'href="/catalog?category=cooking"' in page
+    assert board.threads_for_catalog(state, "cooking")[0]["id"] == 1
+
+    everything = board.catalog_page(state)
+    assert "Broth" in everything and "Synth" in everything
+    assert "<title>Catalog · Snowgate</title>" in everything
+    assert 'href="/catalog"' in everything
+    assert "category=" not in everything
+    assert len(board.threads_for_catalog(state, None)) == 2
+
+
+def test_board_catalog_link_keeps_the_board():
+    page = board.board_page(_sample_state(), "vtubers")
+    assert 'href="/catalog?category=vtubers"' in page
+    home = board.board_page(_sample_state())
+    assert 'href="/catalog">Catalog</a>' in home
+    thread = board.thread_page(_sample_state(), _sample_state()["threads"][0])
+    assert 'href="/catalog?category=vtubers"' in thread
+
+
 def test_thread_quote_stays_on_the_page():
     state = _sample_state()
     page = board.thread_page(state, state["threads"][0])
@@ -269,6 +301,8 @@ if __name__ == "__main__":
     test_corrupt_dataset_is_not_an_empty_board()
     test_scalar_dataset_is_not_an_empty_board()
     test_board_quote_replies_to_that_thread()
+    test_catalog_stays_on_the_board()
+    test_board_catalog_link_keeps_the_board()
     test_thread_quote_stays_on_the_page()
     test_web_search_real_egress()
     print("ALL space board & search tests passed with exit code 0!")

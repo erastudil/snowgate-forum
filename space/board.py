@@ -670,8 +670,9 @@ def modal_html(category_slug: str, thread_id: int = 0) -> str:
     """
 
 
-def shell(title: str, body: str, modal: str = "") -> str:
+def shell(title: str, body: str, modal: str = "", catalog_slug: str = "") -> str:
     links = " ".join(f'<a href="/b/{item["slug"]}">{escape(item["code"])}</a>' for item in CATEGORIES)
+    catalog_href = f"/catalog?category={escape(catalog_slug)}" if catalog_slug else "/catalog"
     return f"""<!DOCTYPE html>
 <html lang="en"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
@@ -688,7 +689,7 @@ def shell(title: str, body: str, modal: str = "") -> str:
 <nav class="nav-bar">
   <a href="/boards">Boards Index</a>
   <a href="/">All Threads</a>
-  <a href="/catalog">Catalog</a>
+  <a href="{catalog_href}">Catalog</a>
   {links}
 </nav>
 <main>
@@ -805,7 +806,7 @@ def board_page(state: dict, active: str | None = None) -> str:
 
     body = f"{actions}{quiet}{''.join(blocks)}{floating_btn}{status_line(state)}"
     modal = modal_html(info["slug"] if active else "tech")
-    return shell(info["name"], body, modal)
+    return shell(info["name"], body, modal, info["slug"] if active else "")
 
 
 def thread_page(state: dict, thread: dict) -> str:
@@ -846,7 +847,7 @@ def thread_page(state: dict, thread: dict) -> str:
 
     body = f"{actions}{op_html}{replies_html}{floating_btn}{status_line(state)}"
     modal = modal_html(thread.get("category") or "tech", int(thread["id"]))
-    return shell(f"Thread #{thread['id']}", body, modal)
+    return shell(f"Thread #{thread['id']}", body, modal, cat["slug"])
 
 
 def boards_page(state: dict) -> str:
@@ -877,11 +878,17 @@ def boards_page(state: dict) -> str:
     return shell("Boards Directory", body)
 
 
+def threads_for_catalog(state: dict, active: str | None = None) -> list:
+    threads = list(state.get("threads") or [])
+    if not active:
+        return threads
+    slug = category(active)["slug"]
+    return [thread for thread in threads if (thread.get("category") or "tech") == slug]
+
+
 def catalog_page(state: dict, active: str | None = None) -> str:
-    threads = state["threads"]
-    if active:
-        slug = category(active)["slug"]
-        threads = [thread for thread in threads if (thread.get("category") or "tech") == slug]
+    info = category(active) if active else None
+    threads = threads_for_catalog(state, active)
     rows = []
     for thread in threads:
         cat = category(thread.get("category"))
@@ -894,16 +901,26 @@ def catalog_page(state: dict, active: str | None = None) -> str:
           <span class="meta">{len(thread.get("posts") or [])} posts &bull; {escape(thread.get("last_bump") or "")}</span>
         </div>
         """)
+    if info:
+        heading = f"{info['code']} Catalog"
+        blurb = info["desc"]
+        title = f"{info['code']} Catalog"
+        slug = info["slug"]
+    else:
+        heading = "Catalog"
+        blurb = "Overview of all active discussions sorted by last bump"
+        title = "Catalog"
+        slug = ""
     body = f"""
     <div class="header-actions">
       <div>
-        <h1 style="font-size:20px;font-weight:800;color:#fff;">Catalog</h1>
-        <p class="meta">Overview of all active discussions sorted by last bump</p>
+        <h1 style="font-size:20px;font-weight:800;color:#fff;">{escape(heading)}</h1>
+        <p class="meta">{escape(blurb)}</p>
       </div>
     </div>
     {''.join(rows) or '<p class="meta" style="text-align:center;padding:40px;">No live threads.</p>'}
     """
-    return shell("Catalog", body)
+    return shell(title, body, "", slug)
 
 
 def status_line(state: dict) -> str:

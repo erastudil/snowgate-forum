@@ -64,9 +64,10 @@ def catalog(request: Request):
     if not _allowed(request):
         return _deny(request)
     state = board.load_state()
+    active = request.query_params.get("category") or request.query_params.get("board")
     if _wants_json(request):
-        return JSONResponse(state["threads"])
-    return HTMLResponse(board.catalog_page(state, request.query_params.get("category")))
+        return JSONResponse(board.threads_for_catalog(state, active))
+    return HTMLResponse(board.catalog_page(state, active))
 
 
 @app.get("/categories")
