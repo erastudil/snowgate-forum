@@ -721,6 +721,11 @@ def render_post(post: dict, reply_link: str = "", thread_id: int = 0, in_thread:
     post_id = int(post.get("id") or 0)
     owner = int(thread_id or post.get("thread_id") or 0)
     quote_call = f"insertQuote({post_id}, {owner})" if owner else f"insertQuote({post_id})"
+    # A normal click still quotes. The href is the permalink, so copy and open-in-new-tab work.
+    if in_thread or not owner:
+        permalink = f"#p{post_id}"
+    else:
+        permalink = f"/thread/{owner}#p{post_id}"
     subject_html = f'<div class="post-subject">{escape(post.get("subject") or "")}</div>' if post.get("subject") else ""
 
     return f"""<article class="post" id="p{post_id}">
@@ -728,7 +733,7 @@ def render_post(post: dict, reply_link: str = "", thread_id: int = 0, in_thread:
   {badge}
   <span class="post-author">{escape(post.get("seat") or "Anonymous")}</span>
   <span class="post-time">{escape(post.get("time") or "")}</span>
-  <span class="post-num"><a href="javascript:void(0)" onclick="{quote_call}">No.{post_id}</a></span>
+  <span class="post-num"><a href="{permalink}" onclick="{quote_call}; return false;">No.{post_id}</a></span>
   {sage_tag}
   {rep_btn}
 </div>

@@ -223,10 +223,11 @@ def _sample_state():
 
 def test_board_quote_replies_to_that_thread():
     page = board.board_page(_sample_state(), "vtubers")
-    assert 'onclick="insertQuote(41, 41)"' in page
-    assert 'onclick="insertQuote(42, 41)"' in page
-    assert page.count('href="/thread/41#p41"') == 2
-    assert 'href="/thread/41#p42"' not in page
+    assert 'onclick="insertQuote(41, 41); return false;"' in page
+    assert 'onclick="insertQuote(42, 41); return false;"' in page
+    assert page.count('href="/thread/41#p41"') == 3
+    assert page.count('href="/thread/41#p42"') == 1
+    assert '<a href="/thread/41#p42" onclick="insertQuote(42, 41); return false;">No.42</a>' in page
     assert 'onclick="openPostModal(0)"' in page
     assert 'name="thread_id" value="0"' in page
     assert "applyComposerTarget" in page
@@ -268,9 +269,11 @@ def test_thread_quote_stays_on_the_page():
     state = _sample_state()
     page = board.thread_page(state, state["threads"][0])
     assert 'href="#p41"' in page
+    assert 'href="#p42"' in page
+    assert '<a href="#p42" onclick="insertQuote(42, 41); return false;">No.42</a>' in page
     assert 'id="p42"' in page
     assert "/thread/41#p" not in page
-    assert 'onclick="insertQuote(41, 41)"' in page
+    assert 'onclick="insertQuote(41, 41); return false;"' in page
     assert "insertQuote(41, 41)" in page
     assert "insertQuote(42, 41)" in page
     assert 'name="thread_id" value="41"' in page
