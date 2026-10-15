@@ -5,6 +5,8 @@
 const assert = require('assert');
 const http = require('http');
 const querystring = require('querystring');
+const fs = require('fs');
+try { fs.unlinkSync('/tmp/forum_data.json'); } catch (_) {}
 const handler = require('./api/index.js');
 
 const server = http.createServer((req, res) => {
@@ -293,9 +295,22 @@ server.listen(0, '127.0.0.1', () => {
                                                                                           assert.ok(Number(topicCount[1]) <= 15, 'topic count is per board, not the whole forum');
                                                                                           console.log('✓ Test 19: Thread view follows the thread board instead of /tech/');
 
-                                                                                          console.log('\n[PASS] All 19 Snowgate Forum & Boards Index tests passed with exit code 0!');
-                                                                                          server.close();
-                                                                                          process.exit(0);
+                                                                                          // Test 20: Full-text query search (?q=Sous-Vide)
+                                                                                          http.get(baseUrl + '/?q=Sous-Vide&format=json', { headers: authHeaders }, resSearch => {
+                                                                                            assert.strictEqual(resSearch.statusCode, 200);
+                                                                                            let sData = '';
+                                                                                            resSearch.on('data', c => (sData += c));
+                                                                                            resSearch.on('end', () => {
+                                                                                              const matchedPosts = JSON.parse(sData);
+                                                                                              assert.ok(Array.isArray(matchedPosts) && matchedPosts.length >= 1, 'Search query must return matching thread posts');
+                                                                                              assert.ok(matchedPosts.some(p => (p.subject || '').includes('Sous-Vide') || (p.note || '').includes('Sous-Vide')));
+                                                                                              console.log('✓ Test 20: GET /?q=Sous-Vide full-text search filter verified');
+
+                                                                                              console.log('\n[PASS] All 20 Snowgate Forum & Boards Index tests passed with exit code 0!');
+                                                                                              server.close();
+                                                                                              process.exit(0);
+                                                                                            });
+                                                                                          });
                                                                                         });
                                                                                       });
                                                                                     });

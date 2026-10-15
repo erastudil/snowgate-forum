@@ -177,9 +177,11 @@ function saveState() {
   try {
     fs.writeFileSync(TMP_DATA_FILE, JSON.stringify(inMemoryThreads, null, 2), 'utf-8');
   } catch (_) {}
-  try {
-    fs.writeFileSync(SEED_DATA_FILE, JSON.stringify(inMemoryThreads, null, 2), 'utf-8');
-  } catch (_) {}
+  if (process.env.SNOWGATE_WRITE_SEED === '1') {
+    try {
+      fs.writeFileSync(SEED_DATA_FILE, JSON.stringify(inMemoryThreads, null, 2), 'utf-8');
+    } catch (_) {}
+  }
 }
 
 function readSeedThreads() {
@@ -1807,6 +1809,17 @@ function handleRequest(req, res) {
     if (activeCat && activeCat !== 'all') {
       const normCat = normalizeCategory(activeCat);
       displayThreads = threads.filter(t => (t.category || 'tech') === normCat);
+    }
+    const searchQuery = String(query.q || query.search || '').trim().toLowerCase();
+    if (searchQuery) {
+      displayThreads = displayThreads.filter(t => {
+        if ((t.subject || '').toLowerCase().includes(searchQuery)) return true;
+        return (t.posts || []).some(p =>
+          (p.note || '').toLowerCase().includes(searchQuery) ||
+          (p.subject || '').toLowerCase().includes(searchQuery) ||
+          (p.seat || '').toLowerCase().includes(searchQuery)
+        );
+      });
     }
 
     // Route: Catalog

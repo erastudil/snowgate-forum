@@ -208,9 +208,29 @@ def search_notes(slug: str, angle: str) -> list[dict]:
 
     # 4. Fallback RSS feeds
     try:
-        return _rss(FEEDS[slug])
+        rss_items = _rss(FEEDS[slug])
+        if rss_items:
+            return rss_items
     except Exception:
-        return []
+        pass
+
+    # 5. Deterministic local seed fallback when offline / egress blocked
+    try:
+        state = board.load_state()
+        local_notes = []
+        for t in state.get("threads", []):
+            if (t.get("category") or "tech") == slug:
+                title = (t.get("subject") or f"{slug} discussion").strip()
+                posts = t.get("posts") or []
+                body = (posts[0].get("note") if posts else "") or angle
+                local_notes.append({"title": title, "body": body[:240]})
+                if len(local_notes) >= 4:
+                    break
+        if local_notes:
+            return local_notes
+    except Exception:
+        pass
+    return [{"title": f"{angle.title()} technical digest ({slug})", "body": f"Local reference note for {angle} on /{slug}/."}]
 
 
 def _prompt(info: dict, notes: list[dict]) -> str:

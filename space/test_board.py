@@ -288,6 +288,68 @@ def test_web_search_real_egress():
     assert "body" in notes[0], "Expected body field"
 
 
+import unittest
+
+
+class SnowgateSpaceBoardTestSuite(unittest.TestCase):
+    def test_prune_drops_old_threads(self):
+        test_prune_drops_old_threads()
+
+    def test_prune_keeps_the_last_thread_on_a_quiet_board(self):
+        test_prune_keeps_the_last_thread_on_a_quiet_board()
+
+    def test_prune_caps_a_board(self):
+        test_prune_caps_a_board()
+
+    def test_parse_generation(self):
+        test_parse_generation()
+
+    def test_parse_keeps_leading_numbers(self):
+        test_parse_keeps_leading_numbers()
+
+    def test_gate_rejects_blank(self):
+        test_gate_rejects_blank()
+
+    def test_gate_accepts_all_password_variations(self):
+        test_gate_accepts_all_password_variations()
+
+    def test_gate_rejects_invalid_passwords(self):
+        test_gate_rejects_invalid_passwords()
+
+    def test_quote_links_are_not_greentext(self):
+        test_quote_links_are_not_greentext()
+
+    def test_absent_dataset_starts_empty(self):
+        test_absent_dataset_starts_empty()
+
+    def test_download_error_is_not_an_empty_board(self):
+        test_download_error_is_not_an_empty_board()
+
+    def test_thread_list_dataset_loads(self):
+        test_thread_list_dataset_loads()
+
+    def test_corrupt_dataset_is_not_an_empty_board(self):
+        test_corrupt_dataset_is_not_an_empty_board()
+
+    def test_scalar_dataset_is_not_an_empty_board(self):
+        test_scalar_dataset_is_not_an_empty_board()
+
+    def test_board_quote_replies_to_that_thread(self):
+        test_board_quote_replies_to_that_thread()
+
+    def test_catalog_stays_on_the_board(self):
+        test_catalog_stays_on_the_board()
+
+    def test_board_catalog_link_keeps_the_board(self):
+        test_board_catalog_link_keeps_the_board()
+
+    def test_thread_quote_stays_on_the_page(self):
+        test_thread_quote_stays_on_the_page()
+
+    def test_web_search_real_egress(self):
+        test_web_search_real_egress()
+
+
 if __name__ == "__main__":
     test_prune_drops_old_threads()
     test_prune_keeps_the_last_thread_on_a_quiet_board()
