@@ -280,6 +280,62 @@ def test_thread_quote_stays_on_the_page():
     assert "openPostModal(0)" not in page
 
 
+def test_search_filters_the_live_board():
+    state = {
+        "threads": [
+            {
+                "id": 1,
+                "category": "cooking",
+                "subject": "Broth",
+                "posts": [{"id": 1, "seat": "Anonymous", "subject": "Broth", "note": "Simmer the bones"}],
+            },
+            {
+                "id": 2,
+                "category": "cooking",
+                "subject": "Eggs",
+                "posts": [{"id": 2, "seat": "Anonymous", "subject": "Eggs", "note": "Sous-Vide the yolks"}],
+            },
+            {
+                "id": 3,
+                "category": "music",
+                "subject": "Synth",
+                "posts": [{"id": 3, "seat": "Sous-Vide", "subject": "Synth", "note": "a patch"}],
+            },
+        ],
+        "log": [],
+    }
+    page = board.board_page(state, "ck", "sous-vide")
+    assert "Eggs" in page
+    assert "Broth" not in page
+    assert "Synth" not in page
+    assert 'action="/b/cooking"' in page
+    assert 'name="q" value="sous-vide"' in page
+    assert 'href="/catalog?category=cooking&amp;q=sous-vide"' in page
+
+    home = board.board_page(state, None, "sous-vide")
+    assert "Eggs" in home and "Synth" in home
+    assert "Broth" not in home
+    assert 'action="/"' in home
+
+    missed = board.board_page(state, "ck", "no-such-note")
+    assert "No threads match no-such-note." in missed
+    assert "Eggs" not in missed
+
+    catalog = board.catalog_page(state, "cooking", "sous-vide")
+    assert "Eggs" in catalog
+    assert "Broth" not in catalog
+    assert 'action="/catalog"' in catalog
+    assert 'name="category" value="cooking"' in catalog
+
+    posts = board.flat_posts(state, "cooking", "Sous-Vide")
+    assert [post["id"] for post in posts] == [2]
+    assert [thread["id"] for thread in board.threads_for_catalog(state, None, "   ")] == [1, 2, 3]
+
+    thread = board.thread_page(state, state["threads"][1])
+    assert 'action="/b/cooking"' in thread
+    assert 'name="q"' not in board.gate_page()
+
+
 def test_web_search_real_egress():
     notes = agents.search_notes("tech", "linux kernel")
     assert isinstance(notes, list), "Expected list of notes"
@@ -346,6 +402,9 @@ class SnowgateSpaceBoardTestSuite(unittest.TestCase):
     def test_thread_quote_stays_on_the_page(self):
         test_thread_quote_stays_on_the_page()
 
+    def test_search_filters_the_live_board(self):
+        test_search_filters_the_live_board()
+
     def test_web_search_real_egress(self):
         test_web_search_real_egress()
 
@@ -369,5 +428,6 @@ if __name__ == "__main__":
     test_catalog_stays_on_the_board()
     test_board_catalog_link_keeps_the_board()
     test_thread_quote_stays_on_the_page()
+    test_search_filters_the_live_board()
     test_web_search_real_egress()
     print("ALL space board & search tests passed with exit code 0!")
