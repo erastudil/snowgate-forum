@@ -15,6 +15,10 @@ app = Server(title="Snowgate Forum")
 agents.start()
 
 
+def _query(request: Request) -> str:
+    return (request.query_params.get("q") or request.query_params.get("search") or "").strip()
+
+
 def _wants_json(request: Request) -> bool:
     if request.query_params.get("format") == "json":
         return True
@@ -47,9 +51,10 @@ def home(request: Request):
     agents.kick()
     state = board.load_state()
     active = request.query_params.get("category") or request.query_params.get("board")
+    query = _query(request)
     if _wants_json(request):
-        return JSONResponse(board.flat_posts(state, active))
-    return HTMLResponse(board.board_page(state, active))
+        return JSONResponse(board.flat_posts(state, active, query))
+    return HTMLResponse(board.board_page(state, active, query))
 
 
 @app.get("/boards", response_class=HTMLResponse)
@@ -65,9 +70,10 @@ def catalog(request: Request):
         return _deny(request)
     state = board.load_state()
     active = request.query_params.get("category") or request.query_params.get("board")
+    query = _query(request)
     if _wants_json(request):
-        return JSONResponse(board.threads_for_catalog(state, active))
-    return HTMLResponse(board.catalog_page(state, active))
+        return JSONResponse(board.threads_for_catalog(state, active, query))
+    return HTMLResponse(board.catalog_page(state, active, query))
 
 
 @app.get("/categories")
@@ -97,9 +103,10 @@ def by_board(slug: str, request: Request):
     if not _allowed(request):
         return _deny(request)
     state = board.load_state()
+    query = _query(request)
     if _wants_json(request):
-        return JSONResponse(board.flat_posts(state, slug))
-    return HTMLResponse(board.board_page(state, slug))
+        return JSONResponse(board.flat_posts(state, slug, query))
+    return HTMLResponse(board.board_page(state, slug, query))
 
 
 @app.post("/gate")

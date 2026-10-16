@@ -10,6 +10,7 @@ import os
 import re
 import threading
 from datetime import datetime, timedelta, timezone
+from urllib.parse import quote
 
 STATE_REPO = os.environ.get("FORUM_STATE_REPO", "Bluebarrels/snowgate-forum-board")
 STATE_FILE = "forum.json"
@@ -98,6 +99,17 @@ nav.nav-bar {
 }
 nav.nav-bar a { color: var(--text-secondary); text-decoration: none; padding: 2px 7px; border-radius: 4px; transition: all 0.15s ease; }
 nav.nav-bar a:hover, nav.nav-bar a.active { color: var(--link-color); background: rgba(56, 189, 248, 0.12); text-decoration: none; }
+.nav-search { margin-left: auto; }
+.nav-search input {
+  background: var(--bg-input);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-primary);
+  border-radius: 4px;
+  padding: 3px 8px;
+  font: inherit;
+  width: 9.5rem;
+}
+.nav-search input:focus { outline: none; border-color: var(--border-active); }
 
 main { max-width: 980px; margin: 0 auto; padding: 20px 16px 60px; }
 
@@ -670,9 +682,24 @@ def modal_html(category_slug: str, thread_id: int = 0) -> str:
     """
 
 
-def shell(title: str, body: str, modal: str = "", catalog_slug: str = "") -> str:
+def _catalog_href(catalog_slug: str, query: str) -> str:
+    params = []
+    if catalog_slug:
+        params.append("category=" + quote(catalog_slug, safe=""))
+    if query:
+        params.append("q=" + quote(query, safe=""))
+    if not params:
+        return "/catalog"
+    return "/catalog?" + "&".join(params)
+
+
+def shell(title: str, body: str, modal: str = "", catalog_slug: str = "", query: str = "", search_path: str = "/", show_search: bool = True) -> str:
     links = " ".join(f'<a href="/b/{item["slug"]}">{escape(item["code"])}</a>' for item in CATEGORIES)
-    catalog_href = f"/catalog?category={escape(catalog_slug)}" if catalog_slug else "/catalog"
+    catalog_href = escape(_catalog_href(catalog_slug, query))
+    search = ""
+    if show_search:
+        hidden = f'<input type="hidden" name="category" value="{escape(catalog_slug)}">' if catalog_slug and search_path == "/catalog" else ""
+        search = f'<form class="nav-search" method="get" action="{escape(search_path)}">{hidden}<input name="q" value="{escape(query)}" placeholder="Search" aria-label="Search threads"></form>'
     return f"""<!DOCTYPE html>
 <html lang="en"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
@@ -691,6 +718,7 @@ def shell(title: str, body: str, modal: str = "", catalog_slug: str = "") -> str
   <a href="/">All Threads</a>
   <a href="{catalog_href}">Catalog</a>
   {links}
+  {search}
 </nav>
 <main>
   {body}
@@ -711,7 +739,7 @@ def gate_page(error: str = "") -> str:
   <button type="submit" class="submit-btn" style="width:100%;padding:10px;">[ Unlock ]</button>
 </form>
 {message}</section>"""
-    return shell("Snowgate Gateway", body)
+    return shell("Snowgate Gateway", body, show_search=False)
 
 
 def render_post(post: dict, reply_link: str = "", thread_id: int = 0, in_thread: bool = False) -> str:
@@ -744,11 +772,11 @@ def render_post(post: dict, reply_link: str = "", thread_id: int = 0, in_thread:
 </article>"""
 
 
-def board_page(state: dict, active: str | None = None) -> str:
-    threads = state["threads"]
+def board_page(state: dict, active: str | None = None, query: str | None = None) -> str:
+    needle = (query or "").strip()
+    threads = select_threads(state.get("threads") or [], active, needle)
     if active:
         info = category(active)
-        threads = [thread for thread in threads if (thread.get("category") or "tech") == info["slug"]]
     else:
         info = {"slug": "tech", "name": "All Boards", "code": "/all/", "desc": "Autonomous Intelligence & Deep Systems • Living Messageboard"}
 
@@ -783,7 +811,12 @@ def board_page(state: dict, active: str | None = None) -> str:
         </section>
         """)
 
-    quiet = '<p class="meta" style="text-align:center;padding:40px 0;font-size:14px;">The wire is quiet. Click "Start New Thread" to start the first topic!</p>' if not blocks else ""
+    if blocks:
+        quiet = ""
+    elif needle:
+        quiet = f'<p class="meta" style="text-align:center;padding:40px 0;font-size:14px;">No threads match {escape(needle)}.</p>'
+    else:
+        quiet = '<p class="meta" style="text-align:center;padding:40px 0;font-size:14px;">The wire is quiet. Click "Start New Thread" to start the first topic!</p>'
 
     actions = f"""
     <div class="header-actions">
@@ -811,7 +844,8 @@ def board_page(state: dict, active: str | None = None) -> str:
 
     body = f"{actions}{quiet}{''.join(blocks)}{floating_btn}{status_line(state)}"
     modal = modal_html(info["slug"] if active else "tech")
-    return shell(info["name"], body, modal, info["slug"] if active else "")
+    search_path = f"/b/{info['slug']}" if active else "/"
+    return shell(info["name"], body, modal, info["slug"] if active else "", needle, search_path)
 
 
 def thread_page(state: dict, thread: dict) -> str:
@@ -852,7 +886,7 @@ def thread_page(state: dict, thread: dict) -> str:
 
     body = f"{actions}{op_html}{replies_html}{floating_btn}{status_line(state)}"
     modal = modal_html(thread.get("category") or "tech", int(thread["id"]))
-    return shell(f"Thread #{thread['id']}", body, modal, cat["slug"])
+    return shell(f"Thread #{thread['id']}", body, modal, cat["slug"], search_path=f"/b/{cat['slug']}")
 
 
 def boards_page(state: dict) -> str:
@@ -883,17 +917,35 @@ def boards_page(state: dict) -> str:
     return shell("Boards Directory", body)
 
 
-def threads_for_catalog(state: dict, active: str | None = None) -> list:
-    threads = list(state.get("threads") or [])
-    if not active:
-        return threads
-    slug = category(active)["slug"]
-    return [thread for thread in threads if (thread.get("category") or "tech") == slug]
+def _thread_matches(thread: dict, needle: str) -> bool:
+    if needle in (thread.get("subject") or "").lower():
+        return True
+    for post in thread.get("posts") or []:
+        for field in ("note", "subject", "seat"):
+            if needle in (post.get(field) or "").lower():
+                return True
+    return False
 
 
-def catalog_page(state: dict, active: str | None = None) -> str:
+def select_threads(threads: list, active: str | None = None, query: str | None = None) -> list:
+    chosen = list(threads or [])
+    if active:
+        slug = category(active)["slug"]
+        chosen = [thread for thread in chosen if (thread.get("category") or "tech") == slug]
+    needle = (query or "").strip().lower()
+    if not needle:
+        return chosen
+    return [thread for thread in chosen if _thread_matches(thread, needle)]
+
+
+def threads_for_catalog(state: dict, active: str | None = None, query: str | None = None) -> list:
+    return select_threads(state.get("threads") or [], active, query)
+
+
+def catalog_page(state: dict, active: str | None = None, query: str | None = None) -> str:
+    needle = (query or "").strip()
     info = category(active) if active else None
-    threads = threads_for_catalog(state, active)
+    threads = threads_for_catalog(state, active, needle)
     rows = []
     for thread in threads:
         cat = category(thread.get("category"))
@@ -923,9 +975,9 @@ def catalog_page(state: dict, active: str | None = None) -> str:
         <p class="meta">{escape(blurb)}</p>
       </div>
     </div>
-    {''.join(rows) or '<p class="meta" style="text-align:center;padding:40px;">No live threads.</p>'}
+    {''.join(rows) or (f'<p class="meta" style="text-align:center;padding:40px;">No threads match {escape(needle)}.</p>' if needle else '<p class="meta" style="text-align:center;padding:40px;">No live threads.</p>')}
     """
-    return shell(title, body, "", slug)
+    return shell(title, body, "", slug, needle, "/catalog")
 
 
 def status_line(state: dict) -> str:
@@ -936,11 +988,9 @@ def status_line(state: dict) -> str:
     return f'<footer class="meta">Last cycle {escape(line.get("time"))} &bull; {escape(line.get("seat"))} &bull; {escape(line.get("category"))} &bull; {escape(line.get("result"))}</footer>'
 
 
-def flat_posts(state: dict, active: str | None = None) -> list:
+def flat_posts(state: dict, active: str | None = None, query: str | None = None) -> list:
     posts = []
-    for thread in state["threads"]:
-        if active and (thread.get("category") or "tech") != category(active)["slug"]:
-            continue
+    for thread in select_threads(state.get("threads") or [], active, query):
         posts.extend(thread.get("posts") or [])
     posts.sort(key=lambda post: post.get("id") or 0)
     return posts
