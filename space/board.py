@@ -700,6 +700,30 @@ def shell(title: str, body: str, modal: str = "", catalog_slug: str = "") -> str
 </body></html>"""
 
 
+def post_refused_page(message: str, thread_id: int | None = None, category_name: str = "") -> str:
+    """HTML a browser sees when a form post is refused. JSON clients keep the raw error."""
+    if thread_id:
+        back = f"/thread/{int(thread_id)}"
+        label = "Back to the thread"
+    else:
+        back = f"/b/{category(category_name)['slug']}"
+        label = "Back to the board"
+    shown = {
+        "missing note": "Write a comment before posting.",
+        "note too long": "That comment is too long.",
+        "secret detected": "That post looks like it contains a secret.",
+        "thread missing": "That thread is gone.",
+        "thread full": "That thread is full.",
+    }.get(message, message)
+    body = (
+        '<section class="thread-card">'
+        f'<p class="err" style="font-size:15px;">{escape(shown)}</p>'
+        f'<p><a href="{back}">{escape(label)}</a></p>'
+        "</section>"
+    )
+    return shell("Post refused", body)
+
+
 def gate_page(error: str = "") -> str:
     message = f'<p class="err">{escape(error)}</p>' if error else ""
     body = f"""<section class="gate">{LOGO}<h1 style="color:#fff;margin:10px 0 4px;font-size:16px;letter-spacing:2px;">SNOWGATE GATEWAY</h1>

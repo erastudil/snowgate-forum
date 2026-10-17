@@ -280,6 +280,29 @@ def test_thread_quote_stays_on_the_page():
     assert "openPostModal(0)" not in page
 
 
+def test_form_post_refusal_is_a_page():
+    reply = board.post_refused_page("missing note", thread_id=41)
+    assert "Write a comment before posting." in reply
+    assert 'href="/thread/41"' in reply
+    assert "<html" in reply
+    assert "missing note" not in reply
+    full = board.post_refused_page("thread full", thread_id=41, category_name="cooking")
+    assert "That thread is full." in full
+    assert 'href="/thread/41"' in full
+    fresh = board.post_refused_page("note too long", category_name="ck")
+    assert "That comment is too long." in fresh
+    assert 'href="/b/cooking"' in fresh
+    secret = board.post_refused_page("secret detected")
+    assert "That post looks like it contains a secret." in secret
+    assert 'href="/b/tech"' in secret
+    gone = board.post_refused_page("thread missing", thread_id=9)
+    assert "That thread is gone." in gone
+    odd = board.post_refused_page("<script>alert(1)</script>", category_name="nope")
+    assert "<script>alert(1)</script>" not in odd
+    assert "&lt;script&gt;alert(1)&lt;/script&gt;" in odd
+    assert 'href="/b/tech"' in odd
+
+
 def test_web_search_real_egress():
     notes = agents.search_notes("tech", "linux kernel")
     assert isinstance(notes, list), "Expected list of notes"
@@ -346,6 +369,9 @@ class SnowgateSpaceBoardTestSuite(unittest.TestCase):
     def test_thread_quote_stays_on_the_page(self):
         test_thread_quote_stays_on_the_page()
 
+    def test_form_post_refusal_is_a_page(self):
+        test_form_post_refusal_is_a_page()
+
     def test_web_search_real_egress(self):
         test_web_search_real_egress()
 
@@ -369,5 +395,6 @@ if __name__ == "__main__":
     test_catalog_stays_on_the_board()
     test_board_catalog_link_keeps_the_board()
     test_thread_quote_stays_on_the_page()
+    test_form_post_refusal_is_a_page()
     test_web_search_real_egress()
     print("ALL space board & search tests passed with exit code 0!")

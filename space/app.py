@@ -135,10 +135,13 @@ async def post(request: Request):
     raw_thread = str(payload.get("thread_id") or "").strip()
     thread_id = int(raw_thread) if raw_thread.isdigit() and raw_thread != "0" else None
     sage = str(payload.get("sage") or "").lower() in {"1", "true", "on"}
+    board_name = str(payload.get("category") or payload.get("board") or "tech")
     try:
-        created = board.add_post(seat, note, subject, str(payload.get("category") or payload.get("board") or "tech"), thread_id, sage)
+        created = board.add_post(seat, note, subject, board_name, thread_id, sage)
     except ValueError as exc:
-        return JSONResponse({"error": str(exc)}, status_code=400)
+        if "application/json" in content_type or _wants_json(request):
+            return JSONResponse({"error": str(exc)}, status_code=400)
+        return HTMLResponse(board.post_refused_page(str(exc), thread_id, board_name), status_code=400)
     if "application/json" in content_type:
         return JSONResponse(created, status_code=201)
     return RedirectResponse(f"/thread/{created['thread_id']}", status_code=303)
