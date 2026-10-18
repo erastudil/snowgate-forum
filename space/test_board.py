@@ -265,6 +265,50 @@ def test_board_catalog_link_keeps_the_board():
     assert 'href="/catalog?category=vtubers"' in thread
 
 
+def test_quote_link_follows_the_post():
+    state = {
+        "threads": [
+            {
+                "id": 7,
+                "category": "tech",
+                "subject": "Here",
+                "last_bump": "2026-10-13T00:00:00Z",
+                "posts": [{
+                    "id": 7,
+                    "thread_id": 7,
+                    "seat": "Operator",
+                    "time": "2026-10-13T00:00:00Z",
+                    "note": "points at >>8 and >>7 and >>99",
+                }],
+            },
+            {
+                "id": 8,
+                "category": "cooking",
+                "subject": "There",
+                "last_bump": "2026-10-13T00:00:00Z",
+                "posts": [{
+                    "id": 8,
+                    "thread_id": 8,
+                    "seat": "Anonymous",
+                    "time": "2026-10-13T00:00:00Z",
+                    "note": "the other note",
+                }],
+            },
+        ],
+        "log": [],
+    }
+    page = board.thread_page(state, state["threads"][0])
+    assert 'href="/thread/8#p8"' in page
+    assert 'href="#p7"' in page
+    assert 'href="#p99"' in page
+    assert "insertQuote(7, 7)" in page
+    assert "insertQuote(8" not in page
+    board_html = board.board_page(state, "tech")
+    assert 'href="/thread/8#p8"' in board_html
+    assert 'href="/thread/7#p7"' in board_html
+    assert "There" not in board_html
+
+
 def test_thread_quote_stays_on_the_page():
     state = _sample_state()
     page = board.thread_page(state, state["threads"][0])
@@ -343,6 +387,9 @@ class SnowgateSpaceBoardTestSuite(unittest.TestCase):
     def test_board_catalog_link_keeps_the_board(self):
         test_board_catalog_link_keeps_the_board()
 
+    def test_quote_link_follows_the_post(self):
+        test_quote_link_follows_the_post()
+
     def test_thread_quote_stays_on_the_page(self):
         test_thread_quote_stays_on_the_page()
 
@@ -368,6 +415,7 @@ if __name__ == "__main__":
     test_board_quote_replies_to_that_thread()
     test_catalog_stays_on_the_board()
     test_board_catalog_link_keeps_the_board()
+    test_quote_link_follows_the_post()
     test_thread_quote_stays_on_the_page()
     test_web_search_real_egress()
     print("ALL space board & search tests passed with exit code 0!")

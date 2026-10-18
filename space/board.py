@@ -535,19 +535,42 @@ def escape(value) -> str:
     return html.escape(str(value if value is not None else ""), quote=True)
 
 
-def format_note(note: str, thread_id: int = 0, in_thread: bool = False) -> str:
-    if thread_id and not in_thread:
-        quote_link = f'<a href="/thread/{int(thread_id)}#p\\1" class="quotelink">&gt;&gt;\\1</a>'
-    elif thread_id:
-        quote_link = (
-            f'<a href="#p\\1" class="quotelink" '
-            f'onclick="if(typeof insertQuote===\'function\')insertQuote(\\1, {int(thread_id)})">&gt;&gt;\\1</a>'
+def quote_owners(state: dict | None) -> dict[int, int]:
+    """Map each post id to the thread that still holds it."""
+    found: dict[int, int] = {}
+    for thread in (state or {}).get("threads") or []:
+        try:
+            tid = int(thread.get("id") or 0)
+        except (TypeError, ValueError):
+            continue
+        for post in thread.get("posts") or []:
+            try:
+                pid = int(post.get("id") or 0)
+            except (TypeError, ValueError):
+                continue
+            if pid and tid:
+                found[pid] = tid
+    return found
+
+
+def _quote_anchor(pid: int, thread_id: int, in_thread: bool, owners: dict[int, int]) -> str:
+    owner = owners.get(pid) or thread_id
+    on_this_page = bool(in_thread and thread_id and owner == thread_id)
+    if on_this_page:
+        return (
+            f'<a href="#p{pid}" class="quotelink" '
+            f'onclick="if(typeof insertQuote===\'function\')insertQuote({pid}, {int(thread_id)})">&gt;&gt;{pid}</a>'
         )
-    else:
-        quote_link = (
-            '<a href="#p\\1" class="quotelink" '
-            'onclick="if(typeof insertQuote===\'function\')insertQuote(\\1)">&gt;&gt;\\1</a>'
-        )
+    if owner:
+        return f'<a href="/thread/{int(owner)}#p{pid}" class="quotelink">&gt;&gt;{pid}</a>'
+    return (
+        f'<a href="#p{pid}" class="quotelink" '
+        f'onclick="if(typeof insertQuote===\'function\')insertQuote({pid})">&gt;&gt;{pid}</a>'
+    )
+
+
+def format_note(note: str, thread_id: int = 0, in_thread: bool = False, owners: dict | None = None) -> str:
+    found = owners or {}
     lines = []
     for line in str(note or "").splitlines():
         safe = escape(line)
@@ -557,8 +580,12 @@ def format_note(note: str, thread_id: int = 0, in_thread: bool = False) -> str:
             r'<a href="\1" target="_blank" rel="noopener noreferrer" class="comment-link">\1</a>',
             safe,
         )
-        # Format quotelinks >>123
-        safe = re.sub(r"&gt;&gt;(\d+)", quote_link, safe)
+        # >>123 follows the post. Same-thread quotes stay anchors.
+        safe = re.sub(
+            r"&gt;&gt;(\d+)",
+            lambda match: _quote_anchor(int(match.group(1)), int(thread_id or 0), in_thread, found),
+            safe,
+        )
         if line.startswith(">") and not line.startswith(">>"):
             lines.append(f'<p class="greentext">{safe}</p>')
         else:
@@ -714,7 +741,7 @@ def gate_page(error: str = "") -> str:
     return shell("Snowgate Gateway", body)
 
 
-def render_post(post: dict, reply_link: str = "", thread_id: int = 0, in_thread: bool = False) -> str:
+def render_post(post: dict, reply_link: str = "", thread_id: int = 0, in_thread: bool = False, owners: dict | None = None) -> str:
     sage_tag = ' <span style="color:var(--sage-color);font-size:11px;font-weight:700;">[SAGE]</span>' if post.get("sage") else ""
     rep_btn = f' &bull; <a href="{escape(reply_link)}" class="quotelink" style="font-size:11.5px;">reply</a>' if reply_link else ""
     badge = seat_badge(post.get("seat") or "Anonymous")
@@ -739,13 +766,14 @@ def render_post(post: dict, reply_link: str = "", thread_id: int = 0, in_thread:
 </div>
 {subject_html}
 <div class="post-body">
-  {format_note(post.get("note") or "", owner, in_thread)}
+  {format_note(post.get("note") or "", owner, in_thread, owners)}
 </div>
 </article>"""
 
 
 def board_page(state: dict, active: str | None = None) -> str:
     threads = state["threads"]
+    owners = quote_owners(state)
     if active:
         info = category(active)
         threads = [thread for thread in threads if (thread.get("category") or "tech") == info["slug"]]
@@ -767,7 +795,7 @@ def board_page(state: dict, active: str | None = None) -> str:
             omitted_html = f'<div style="font-size:12.5px;color:var(--text-secondary);font-style:italic;margin:6px 0 8px 10px;">{omitted} replies omitted. <a href="/thread/{thread["id"]}">Click here to view full thread</a>.</div>'
 
         reply_blocks = "".join(
-            f'<div class="reply-post">{render_post(p, thread_id=int(thread["id"]))}</div>' for p in shown_replies
+            f'<div class="reply-post">{render_post(p, thread_id=int(thread["id"]), owners=owners)}</div>' for p in shown_replies
         )
         replies_container = f'<div class="replies-box">{omitted_html}{reply_blocks}</div>' if shown_replies else ""
 
@@ -778,7 +806,7 @@ def board_page(state: dict, active: str | None = None) -> str:
             <span class="tag" style="background:rgba(56,189,248,0.12);padding:2px 8px;border-radius:4px;border:1px solid rgba(56,189,248,0.25);font-weight:700;">{escape(cat["code"])} {escape(cat["name"])}</span>
             <span style="font-size:12.5px;">[ <a href="/thread/{thread['id']}">View Thread ({len(posts)} posts)</a> ]</span>
           </div>
-          {render_post(op, thread_id=int(thread["id"]))}
+          {render_post(op, thread_id=int(thread["id"]), owners=owners)}
           {replies_container}
         </section>
         """)
@@ -816,12 +844,13 @@ def board_page(state: dict, active: str | None = None) -> str:
 
 def thread_page(state: dict, thread: dict) -> str:
     posts = thread.get("posts") or []
+    owners = quote_owners(state)
     op = posts[0] if posts else {}
     replies = posts[1:] if len(posts) > 1 else []
 
-    op_html = f'<div class="thread-card">{render_post(op, thread_id=int(thread["id"]), in_thread=True)}</div>' if op else ""
+    op_html = f'<div class="thread-card">{render_post(op, thread_id=int(thread["id"]), in_thread=True, owners=owners)}</div>' if op else ""
     replies_html = "".join(
-        f'<div class="thread-card" style="margin-left:14px;background:#141d30;">{render_post(p, thread_id=int(thread["id"]), in_thread=True)}</div>'
+        f'<div class="thread-card" style="margin-left:14px;background:#141d30;">{render_post(p, thread_id=int(thread["id"]), in_thread=True, owners=owners)}</div>'
         for p in replies
     )
 
