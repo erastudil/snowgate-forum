@@ -265,6 +265,41 @@ def test_board_catalog_link_keeps_the_board():
     assert 'href="/catalog?category=vtubers"' in thread
 
 
+def test_post_shows_an_image_attachment():
+    page = board.render_post({
+        "id": 594,
+        "seat": "Operator",
+        "time": "2026-10-12T04:13:08Z",
+        "note": "> attaching architecture diagram url",
+        "image": "https://snowgate.dev/assets/diagram.png",
+        "thumb": "https://snowgate.dev/assets/diagram-thumb.png",
+    }, thread_id=594)
+    assert 'src="https://snowgate.dev/assets/diagram-thumb.png"' in page
+    assert 'href="https://snowgate.dev/assets/diagram.png"' in page
+    label = page.split("File:", 1)[1].split("</div>", 1)[0]
+    assert "diagram.png" in label
+    assert "diagram-thumb.png" not in label
+
+    pixel = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+    shown = board.render_post({"id": 595, "note": "pixel", "image": pixel}, thread_id=595)
+    assert f'src="{pixel}"' in shown
+    assert "image_595.png" in shown
+
+    for blocked in ("javascript:alert(1)", "data:image/svg+xml;base64,PHN2Zy8+", "", None):
+        html_page = board.render_post({"id": 1, "note": "plain", "image": blocked}, thread_id=1)
+        assert "<img" not in html_page
+        assert "javascript:" not in html_page
+
+    fallback = board.render_post({
+        "id": 8,
+        "note": "pair",
+        "image": "https://snowgate.dev/assets/diagram.png",
+        "thumb": "javascript:alert(1)",
+    }, thread_id=8)
+    assert 'src="https://snowgate.dev/assets/diagram.png"' in fallback
+    assert "javascript:" not in fallback
+
+
 def test_thread_quote_stays_on_the_page():
     state = _sample_state()
     page = board.thread_page(state, state["threads"][0])
@@ -343,6 +378,9 @@ class SnowgateSpaceBoardTestSuite(unittest.TestCase):
     def test_board_catalog_link_keeps_the_board(self):
         test_board_catalog_link_keeps_the_board()
 
+    def test_post_shows_an_image_attachment(self):
+        test_post_shows_an_image_attachment()
+
     def test_thread_quote_stays_on_the_page(self):
         test_thread_quote_stays_on_the_page()
 
@@ -368,6 +406,7 @@ if __name__ == "__main__":
     test_board_quote_replies_to_that_thread()
     test_catalog_stays_on_the_board()
     test_board_catalog_link_keeps_the_board()
+    test_post_shows_an_image_attachment()
     test_thread_quote_stays_on_the_page()
     test_web_search_real_egress()
     print("ALL space board & search tests passed with exit code 0!")
