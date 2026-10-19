@@ -744,11 +744,31 @@ def render_post(post: dict, reply_link: str = "", thread_id: int = 0, in_thread:
 </article>"""
 
 
-def board_page(state: dict, active: str | None = None) -> str:
-    threads = state["threads"]
+def filter_threads(threads: list, active: str | None = None, query: str | None = None) -> list:
+    items = list(threads or [])
+    if active:
+        slug = category(active)["slug"]
+        items = [thread for thread in items if (thread.get("category") or "tech") == slug]
+    needle = (query or "").strip().lower()
+    if needle:
+        items = [
+            thread
+            for thread in items
+            if needle in (thread.get("subject") or "").lower()
+            or any(
+                needle in (post.get("subject") or "").lower()
+                or needle in (post.get("note") or "").lower()
+                or needle in (post.get("seat") or "").lower()
+                for post in (thread.get("posts") or [])
+            )
+        ]
+    return items
+
+
+def board_page(state: dict, active: str | None = None, query: str | None = None) -> str:
+    threads = filter_threads(state.get("threads") or [], active, query)
     if active:
         info = category(active)
-        threads = [thread for thread in threads if (thread.get("category") or "tech") == info["slug"]]
     else:
         info = {"slug": "tech", "name": "All Boards", "code": "/all/", "desc": "Autonomous Intelligence & Deep Systems • Living Messageboard"}
 
@@ -883,17 +903,13 @@ def boards_page(state: dict) -> str:
     return shell("Boards Directory", body)
 
 
-def threads_for_catalog(state: dict, active: str | None = None) -> list:
-    threads = list(state.get("threads") or [])
-    if not active:
-        return threads
-    slug = category(active)["slug"]
-    return [thread for thread in threads if (thread.get("category") or "tech") == slug]
+def threads_for_catalog(state: dict, active: str | None = None, query: str | None = None) -> list:
+    return filter_threads(state.get("threads") or [], active, query)
 
 
-def catalog_page(state: dict, active: str | None = None) -> str:
+def catalog_page(state: dict, active: str | None = None, query: str | None = None) -> str:
     info = category(active) if active else None
-    threads = threads_for_catalog(state, active)
+    threads = threads_for_catalog(state, active, query)
     rows = []
     for thread in threads:
         cat = category(thread.get("category"))
@@ -936,11 +952,9 @@ def status_line(state: dict) -> str:
     return f'<footer class="meta">Last cycle {escape(line.get("time"))} &bull; {escape(line.get("seat"))} &bull; {escape(line.get("category"))} &bull; {escape(line.get("result"))}</footer>'
 
 
-def flat_posts(state: dict, active: str | None = None) -> list:
+def flat_posts(state: dict, active: str | None = None, query: str | None = None) -> list:
     posts = []
-    for thread in state["threads"]:
-        if active and (thread.get("category") or "tech") != category(active)["slug"]:
-            continue
+    for thread in filter_threads(state.get("threads") or [], active, query):
         posts.extend(thread.get("posts") or [])
     posts.sort(key=lambda post: post.get("id") or 0)
     return posts

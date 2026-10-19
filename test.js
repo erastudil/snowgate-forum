@@ -306,9 +306,39 @@ server.listen(0, '127.0.0.1', () => {
                                                                                               assert.ok(matchedPosts.some(p => (p.subject || '').includes('Sous-Vide') || (p.note || '').includes('Sous-Vide')));
                                                                                               console.log('✓ Test 20: GET /?q=Sous-Vide full-text search filter verified');
 
-                                                                                              console.log('\n[PASS] All 20 Snowgate Forum & Boards Index tests passed with exit code 0!');
-                                                                                              server.close();
-                                                                                              process.exit(0);
+                                                                                              // Test 21: Board & thread quote permalinks, applyComposerTarget, and board-scoped catalog
+                                                                                              assert.ok(threadHtml.includes(`href="#p${pcgThreadId}"`), 'thread view post permalink must stay on page (#p<id>)');
+                                                                                              assert.ok(!threadHtml.includes(`href="/thread/${pcgThreadId}#p`), 'thread view must not link out to /thread/<id>#p<id>');
+                                                                                              assert.ok(threadHtml.includes(`insertQuote(${pcgThreadId}, ${pcgThreadId}); return false;`), 'thread view quote call must pass threadId');
+                                                                                              assert.ok(threadHtml.includes('href="/catalog?category=pc-games"'), 'thread view catalog link must keep board slug');
+
+                                                                                              http.get(baseUrl + '/b/pc-games', { headers: authHeaders }, resBoardPcg => {
+                                                                                                assert.strictEqual(resBoardPcg.statusCode, 200);
+                                                                                                let boardPcgHtml = '';
+                                                                                                resBoardPcg.on('data', c => (boardPcgHtml += c));
+                                                                                                resBoardPcg.on('end', () => {
+                                                                                                  assert.ok(boardPcgHtml.includes(`href="/thread/${pcgThreadId}#p${pcgThreadId}"`), 'board view post permalink must point to /thread/<tid>#p<pid>');
+                                                                                                  assert.ok(boardPcgHtml.includes(`onclick="insertQuote(${pcgThreadId}, ${pcgThreadId}); return false;"`), 'board view quote call must target specific thread');
+                                                                                                  assert.ok(boardPcgHtml.includes('applyComposerTarget'), 'board view script must include applyComposerTarget');
+                                                                                                  assert.ok(boardPcgHtml.includes('onclick="openPostModal(0)"'), 'board view new-thread button must reset composer target to 0');
+                                                                                                  assert.ok(boardPcgHtml.includes('href="/catalog?category=pc-games"'), 'board view catalog link must preserve board');
+
+                                                                                                  http.get(baseUrl + '/catalog?category=ck', { headers: authHeaders }, resCatCk => {
+                                                                                                    assert.strictEqual(resCatCk.statusCode, 200);
+                                                                                                    let catCkHtml = '';
+                                                                                                    resCatCk.on('data', c => (catCkHtml += c));
+                                                                                                    resCatCk.on('end', () => {
+                                                                                                      assert.ok(catCkHtml.includes('<title>/ck/ - Catalog - Snowgate Forum</title>'), 'board-scoped catalog must render /ck/ - Catalog - Snowgate Forum title');
+                                                                                                      assert.ok(catCkHtml.includes('href="/catalog?category=cooking"'), 'board-scoped catalog nav link must keep cooking slug');
+                                                                                                      console.log('✓ Test 21: Board/thread quote permalinks, applyComposerTarget, and board-scoped catalog verified');
+
+                                                                                                      console.log('\n[PASS] All 21 Snowgate Forum & Boards Index tests passed with exit code 0!');
+                                                                                                      server.close();
+                                                                                                      process.exit(0);
+                                                                                                    });
+                                                                                                  });
+                                                                                                });
+                                                                                              });
                                                                                             });
                                                                                           });
                                                                                         });
