@@ -316,6 +316,9 @@ textarea.form-input {
 }
 
 .greentext { color: var(--greentext); font-weight: 500; }
+.file-container { margin: 8px 0; }
+.file-meta { font-size: 11px; color: var(--text-muted); margin-bottom: 4px; font-family: monospace; }
+.post-thumb { max-width: 200px; max-height: 200px; border-radius: 6px; border: 1px solid var(--border-subtle); object-fit: cover; background: var(--bg-secondary); display: block; }
 .comment-link { color: #38bdf8; text-decoration: underline; text-underline-offset: 3px; font-weight: 500; }
 .comment-link:hover { color: #7dd3fc; }
 .quotelink { background: rgba(56, 189, 248, 0.12); color: #38bdf8; padding: 1px 6px; border-radius: 4px; font-weight: 600; font-size: 12px; border: 1px solid rgba(56, 189, 248, 0.25); text-decoration: none; cursor: pointer; }
@@ -535,6 +538,48 @@ def escape(value) -> str:
     return html.escape(str(value if value is not None else ""), quote=True)
 
 
+# http(s) pictures and small bitmap data URIs only. SVG and script URLs stay off the page.
+_SAFE_IMAGE = re.compile(
+    r"^(?:https?://[^\s<>\"']+|data:image/(?:png|jpe?g|gif|webp);base64,[a-z0-9+/=\s]+)$",
+    re.I,
+)
+
+
+def _safe_image(value) -> str:
+    raw = str(value or "").strip()
+    if not raw or len(raw) > 1_500_000:
+        return ""
+    if _SAFE_IMAGE.match(raw):
+        return raw
+    return ""
+
+
+def _image_label(src: str, post_id: int) -> str:
+    if src.lower().startswith("data:"):
+        mime = src[5:src.find(";")].split("/")[-1].split("+")[0]
+        return f"image_{post_id}.{mime or 'img'}"
+    tail = src.split("?", 1)[0].rstrip("/").rsplit("/", 1)[-1]
+    return tail or f"image_{post_id}"
+
+
+def attachment_html(post: dict) -> str:
+    image = _safe_image(post.get("image"))
+    if not image:
+        return ""
+    thumb = _safe_image(post.get("thumb")) or image
+    post_id = int(post.get("id") or 0)
+    name = escape(_image_label(image, post_id))
+    full = escape(image)
+    shown = escape(thumb)
+    return (
+        f'<div class="file-container">'
+        f'<div class="file-meta">File: <a href="{full}" target="_blank" rel="noopener noreferrer">{name}</a></div>'
+        f'<a href="{full}" target="_blank" rel="noopener noreferrer">'
+        f'<img src="{shown}" alt="File No.{post_id}" class="post-thumb" loading="lazy">'
+        f"</a></div>"
+    )
+
+
 def format_note(note: str, thread_id: int = 0, in_thread: bool = False) -> str:
     if thread_id and not in_thread:
         quote_link = f'<a href="/thread/{int(thread_id)}#p\\1" class="quotelink">&gt;&gt;\\1</a>'
@@ -739,6 +784,7 @@ def render_post(post: dict, reply_link: str = "", thread_id: int = 0, in_thread:
 </div>
 {subject_html}
 <div class="post-body">
+  {attachment_html(post)}
   {format_note(post.get("note") or "", owner, in_thread)}
 </div>
 </article>"""
