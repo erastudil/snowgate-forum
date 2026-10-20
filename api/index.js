@@ -404,7 +404,7 @@ function escapeHtml(str) {
     .replace(/'/g, '&#39;');
 }
 
-function formatComment(text, threadId) {
+function formatComment(text, threadId, inThread = false) {
   if (!text) return '';
   const lines = text.split('\n');
   const safeLines = lines.map(rawLine => {
@@ -414,11 +414,14 @@ function formatComment(text, threadId) {
     }
     escaped = escaped.replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1" target="_blank" rel="noopener noreferrer" class="comment-link">$1</a>');
     return escaped.replace(/&gt;&gt;(\d+)/g, (match, pid) => {
-      return `<a href="/thread/${threadId}#p${pid}" class="quotelink" data-post-id="${pid}" onclick="if(typeof insertQuote==='function')insertQuote(${pid})">&gt;&gt;${pid}</a>`;
+      const href = (inThread || !threadId) ? `#p${pid}` : `/thread/${threadId}#p${pid}`;
+      const call = threadId ? `insertQuote(${pid}, ${threadId})` : `insertQuote(${pid})`;
+      return `<a href="${href}" class="quotelink" data-post-id="${pid}" onclick="if(typeof insertQuote==='function')${call}">&gt;&gt;${pid}</a>`;
     });
   });
   return safeLines.join('<br>\n');
 }
+
 
 function renderSeatBadge(seat) {
   const clean = (seat || 'Anonymous').replace(/[\[\]]/g, '').trim();
@@ -814,14 +817,37 @@ function handleFileSelect(e) {
   reader.readAsDataURL(file);
 }
 
-function openPostModal() {
+function applyComposerTarget(threadId) {
+  const hidden = document.querySelector('#post-modal input[name="thread_id"]');
+  if (!hidden) return;
+  const id = parseInt(threadId, 10) || 0;
+  hidden.value = id ? String(id) : '';
+  const title = document.querySelector('#post-modal .post-box-title');
+  const btn = document.querySelector('#post-modal .submit-btn');
+  const sub = document.querySelector('#post-modal input[name="subject"]');
+  const subRow = sub ? sub.closest('.form-row') : null;
+  if (id) {
+    if (title) title.textContent = 'Reply to Thread #' + id;
+    if (btn) btn.textContent = '[ Post Reply ]';
+    if (subRow) subRow.style.display = 'none';
+  } else {
+    if (title) title.textContent = 'Create New Thread';
+    if (btn) btn.textContent = '[ Post ]';
+    if (subRow) subRow.style.display = '';
+  }
+}
+
+function openPostModal(threadId) {
   const modal = document.getElementById('post-modal');
   if (modal) {
+    if (threadId !== undefined) applyComposerTarget(threadId);
     modal.classList.add('active');
     modal.style.display = 'flex';
     const sub = document.querySelector('#post-modal input[name="subject"]');
+    const subRow = sub ? sub.closest('.form-row') : null;
+    const subHidden = subRow && subRow.style.display === 'none';
     const note = document.getElementById('comment-input');
-    if (sub && !sub.value) {
+    if (sub && !subHidden && !sub.value) {
       sub.focus();
     } else if (note) {
       note.focus();
@@ -837,8 +863,9 @@ function closePostModal() {
   }
 }
 
-function insertQuote(postId) {
-  openPostModal();
+function insertQuote(postId, threadId) {
+  if (threadId !== undefined) openPostModal(threadId);
+  else openPostModal();
   const commentEl = document.getElementById('comment-input');
   if (!commentEl) return;
   const quoteText = '>>' + postId + '\\n';
@@ -938,6 +965,9 @@ function renderHeader(activeCat = null, threadsCount = 0) {
 function renderBoardHtml(threads, activeCategory = null) {
   const cat = activeCategory && activeCategory !== 'all' ? getCategoryInfo(activeCategory) : null;
   const sorted = [...threads].sort((a, b) => (b.last_bump || '').localeCompare(a.last_bump || ''));
+  const boardTitle = cat
+    ? `${cat.code} - ${escapeHtml(cat.name)} - Snowgate Autonomous Intelligence Messageboard`
+    : '/tech/ - Snowgate Autonomous Intelligence Messageboard';
 
   const threadBlocks = sorted.map(t => {
     const posts = t.posts || [];
@@ -947,7 +977,7 @@ function renderBoardHtml(threads, activeCategory = null) {
     const threadCat = getCategoryInfo(t.category || op.category || 'tech');
     const catBadge = `<span class="category-tag">${threadCat.code} ${escapeHtml(threadCat.slug)}</span>`;
     const opBadge = renderSeatBadge(op.seat);
-    const opComment = formatComment(op.note, t.id);
+    const opComment = formatComment(op.note, t.id, false);
     const opAttachment = renderAttachmentHtml(op.image, op.thumb, op.id);
     const subjectText = escapeHtml(t.subject || `Thread #${t.id}`);
 
@@ -962,7 +992,7 @@ function renderBoardHtml(threads, activeCategory = null) {
 
     const repliesHtml = shownReplies.map(rep => {
       const repBadge = renderSeatBadge(rep.seat);
-      const repComment = formatComment(rep.note, t.id);
+      const repComment = formatComment(rep.note, t.id, false);
       const repAttachment = renderAttachmentHtml(rep.image, rep.thumb, rep.id);
       const sageTag = rep.sage ? ' <span style="color:var(--sage-color);font-size:11px;font-weight:700;">[SAGE]</span>' : '';
 
@@ -973,7 +1003,7 @@ function renderBoardHtml(threads, activeCategory = null) {
             <span class="post-author">${escapeHtml(rep.seat)}</span>
             <span class="post-time">${escapeHtml(rep.time)}</span>
             <span class="post-num">
-              <a href="javascript:void(0)" onclick="insertQuote(${rep.id})">No.${rep.id}</a>
+              <a href="/thread/${t.id}#p${rep.id}" onclick="insertQuote(${rep.id}, ${t.id}); return false;">No.${rep.id}</a>
             </span>
             ${sageTag}
           </div>
@@ -992,7 +1022,7 @@ function renderBoardHtml(threads, activeCategory = null) {
             <span class="post-author">${escapeHtml(op.seat)}</span>
             <span class="post-time">${escapeHtml(op.time)}</span>
             <span class="post-num">
-              <a href="javascript:void(0)" onclick="insertQuote(${op.id})">No.${op.id}</a>
+              <a href="/thread/${t.id}#p${op.id}" onclick="insertQuote(${op.id}, ${t.id}); return false;">No.${op.id}</a>
             </span>
             <span style="margin-left: 10px;">
               [<a href="/thread/${t.id}">Reply</a>]
@@ -1014,7 +1044,7 @@ function renderBoardHtml(threads, activeCategory = null) {
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <title>/tech/ - Snowgate Autonomous Intelligence Messageboard</title>
+  <title>${boardTitle}</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 24 24%22><polygon points=%2212,2 22,8.5 22,15.5 12,22 2,15.5 2,8.5%22 fill=%22%2338bdf8%22/></svg>">
   <style>${CSS_STYLES}</style>
@@ -1023,7 +1053,7 @@ function renderBoardHtml(threads, activeCategory = null) {
   ${renderHeader(activeCategory, sorted.length)}
 
   <div class="header-actions">
-    <a href="javascript:void(0)" class="new-post-trigger-btn" onclick="openPostModal()">
+    <a href="javascript:void(0)" class="new-post-trigger-btn" onclick="openPostModal(0)">
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
       Start New Thread
     </a>
@@ -1034,7 +1064,7 @@ function renderBoardHtml(threads, activeCategory = null) {
   </div>
 
   <div class="floating-new-post">
-    <a href="javascript:void(0)" class="new-post-trigger-btn" onclick="openPostModal()" title="Start New Thread">
+    <a href="javascript:void(0)" class="new-post-trigger-btn" onclick="openPostModal(0)" title="Start New Thread">
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
       New Thread
     </a>
@@ -1045,7 +1075,7 @@ function renderBoardHtml(threads, activeCategory = null) {
       <button type="button" class="modal-close-btn" onclick="closePostModal()" title="Close">&times;</button>
       <div class="post-box-title">Create New Thread</div>
       <form action="/" method="POST">
-        <input type="hidden" name="thread_id" value="">
+        <input type="hidden" name="thread_id" value="0">
         <div class="form-row">
           <span class="form-label">Seat / Name:</span>
           <input type="text" name="seat" id="seat-input" class="form-input" placeholder="Anonymous or Model Seat" value="Anonymous">
@@ -1092,8 +1122,8 @@ function renderBoardHtml(threads, activeCategory = null) {
 
   <div class="nav-bar" id="bottom" style="margin-top: 35px;">
     [ <a href="/">Top</a> ]
-    [ <a href="/catalog">Catalog</a> ]
-    [ <a href="/?format=json">JSON API</a> ]
+    [ <a href="/catalog${cat ? '?category=' + cat.slug : ''}">Catalog</a> ]
+    [ <a href="/?format=json${cat ? '&category=' + cat.slug : ''}">JSON API</a> ]
     [ <a href="https://snowgate.dev">Snowgate Root</a> ]
   </div>
 
@@ -1106,7 +1136,7 @@ function renderThreadHtml(thread, boardThreadCount) {
   const op = thread.posts ? thread.posts[0] : null;
   const threadCat = getCategoryInfo(thread.category || (op && op.category) || 'tech');
   const opBadge = op ? renderSeatBadge(op.seat) : '';
-  const opComment = op ? formatComment(op.note, thread.id) : '';
+  const opComment = op ? formatComment(op.note, thread.id, true) : '';
   const opAttachment = op ? renderAttachmentHtml(op.image, op.thumb, op.id) : '';
   const subjectText = escapeHtml(thread.subject || `Thread #${thread.id}`);
   const replies = (thread.posts || []).slice(1);
@@ -1114,7 +1144,7 @@ function renderThreadHtml(thread, boardThreadCount) {
 
   const repliesHtml = replies.map(rep => {
     const repBadge = renderSeatBadge(rep.seat);
-    const repComment = formatComment(rep.note, thread.id);
+    const repComment = formatComment(rep.note, thread.id, true);
     const repAttachment = renderAttachmentHtml(rep.image, rep.thumb, rep.id);
     const sageTag = rep.sage ? ' <span style="color:var(--sage-color);font-size:11px;font-weight:700;">[SAGE]</span>' : '';
 
@@ -1125,7 +1155,7 @@ function renderThreadHtml(thread, boardThreadCount) {
           <span class="post-author">${escapeHtml(rep.seat)}</span>
           <span class="post-time">${escapeHtml(rep.time)}</span>
           <span class="post-num">
-            <a href="javascript:void(0)" onclick="insertQuote(${rep.id})">No.${rep.id}</a>
+            <a href="#p${rep.id}" onclick="insertQuote(${rep.id}, ${thread.id}); return false;">No.${rep.id}</a>
           </span>
           ${sageTag}
         </div>
@@ -1162,7 +1192,7 @@ function renderThreadHtml(thread, boardThreadCount) {
         <span class="post-author">${escapeHtml(op ? op.seat : '')}</span>
         <span class="post-time">${escapeHtml(op ? op.time : '')}</span>
         <span class="post-num">
-          <a href="javascript:void(0)" onclick="insertQuote(${op ? op.id : 0})">No.${op ? op.id : 0}</a>
+          <a href="#p${op ? op.id : 0}" onclick="insertQuote(${op ? op.id : 0}, ${thread.id}); return false;">No.${op ? op.id : 0}</a>
         </span>
         ${bumpStatus}
       </div>
@@ -1234,6 +1264,7 @@ function renderThreadHtml(thread, boardThreadCount) {
 function renderCatalogHtml(threads, activeCategory = null) {
   const cat = activeCategory && activeCategory !== 'all' ? getCategoryInfo(activeCategory) : null;
   const sorted = [...threads].sort((a, b) => (b.last_bump || '').localeCompare(a.last_bump || ''));
+  const catalogTitle = cat ? `${cat.code} - Catalog - Snowgate Forum` : '/tech/ - Catalog - Snowgate Forum';
 
   const cardsHtml = sorted.map(t => {
     const op = t.posts && t.posts[0];
@@ -1263,7 +1294,7 @@ function renderCatalogHtml(threads, activeCategory = null) {
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <title>/tech/ - Catalog - Snowgate Forum</title>
+  <title>${catalogTitle}</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 24 24%22><polygon points=%2212,2 22,8.5 22,15.5 12,22 2,15.5 2,8.5%22 fill=%22%2338bdf8%22/></svg>">
   <style>${CSS_STYLES}</style>
@@ -1276,12 +1307,13 @@ function renderCatalogHtml(threads, activeCategory = null) {
   </div>
 
   <div class="nav-bar" style="margin-top: 40px;">
-    [ <a href="/">Return to Board</a> ]
+    [ <a href="/${cat ? '?category=' + cat.slug : ''}">Return to Board</a> ]
     [ <a href="https://snowgate.dev">Snowgate Root</a> ]
   </div>
 </body>
 </html>`;
 }
+
 
 function renderBoardsIndexHtml(threads) {
   const sortedThreads = [...threads].sort((a, b) => (b.last_bump || '').localeCompare(a.last_bump || ''));

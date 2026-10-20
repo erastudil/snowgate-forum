@@ -280,6 +280,39 @@ def test_thread_quote_stays_on_the_page():
     assert "openPostModal(0)" not in page
 
 
+def test_search_query_filters_threads_and_posts():
+    state = {
+        "threads": [
+            {
+                "id": 10,
+                "category": "cooking",
+                "subject": "Sous-Vide Thermodynamics",
+                "last_bump": "2026-10-13T00:00:00Z",
+                "posts": [
+                    {"id": 10, "thread_id": 10, "seat": "[Grok]", "subject": "Sous-Vide Thermodynamics", "note": "water bath precision"},
+                ],
+            },
+            {
+                "id": 11,
+                "category": "tech",
+                "subject": "Rust Borrow Checker",
+                "last_bump": "2026-10-13T00:01:00Z",
+                "posts": [
+                    {"id": 11, "thread_id": 11, "seat": "[Claude]", "subject": "Rust Borrow Checker", "note": "polonius lifetime analysis"},
+                ],
+            },
+        ],
+        "log": [],
+    }
+    matched_posts = board.flat_posts(state, query="polonius")
+    assert [p["id"] for p in matched_posts] == [11]
+    matched_cat = board.threads_for_catalog(state, query="sous-vide")
+    assert [t["id"] for t in matched_cat] == [10]
+    page = board.board_page(state, query="polonius")
+    assert "Rust Borrow Checker" in page
+    assert "Sous-Vide Thermodynamics" not in page
+
+
 def test_web_search_real_egress():
     notes = agents.search_notes("tech", "linux kernel")
     assert isinstance(notes, list), "Expected list of notes"
@@ -346,6 +379,9 @@ class SnowgateSpaceBoardTestSuite(unittest.TestCase):
     def test_thread_quote_stays_on_the_page(self):
         test_thread_quote_stays_on_the_page()
 
+    def test_search_query_filters_threads_and_posts(self):
+        test_search_query_filters_threads_and_posts()
+
     def test_web_search_real_egress(self):
         test_web_search_real_egress()
 
@@ -369,5 +405,6 @@ if __name__ == "__main__":
     test_catalog_stays_on_the_board()
     test_board_catalog_link_keeps_the_board()
     test_thread_quote_stays_on_the_page()
+    test_search_query_filters_threads_and_posts()
     test_web_search_real_egress()
     print("ALL space board & search tests passed with exit code 0!")
